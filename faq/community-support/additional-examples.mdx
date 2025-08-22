@@ -1,0 +1,164 @@
+---
+title: "Where can I find more examples and learning resources?"
+description: "Point users to curated example projects, tutorials, video guides, and reference documentation to deepen their mastery of go-pg and the wider ecosystem."
+---
+
+# Where can I find more examples and learning resources?
+
+Welcome to your gateway for deepening your knowledge and practical skills with **go-pg**, the PostgreSQL client and ORM for Go. This page consolidates the best-curated example projects, tutorials, video guides, and reference materials designed to accelerate your mastery of the `go-pg` API and ecosystem.
+
+---
+
+## Frequently Asked Questions
+
+### What types of example projects are available?
+Several open-source example applications showcase real-world integrations of `go-pg`. These projects cover a variety of domains and application architectures to help you see `go-pg` in action:
+
+- **[monetr](https://github.com/monetr/monetr):** A budgeting app focused on recurring expense planning.
+- **[bunrouter RealWorld App](https://github.com/go-bun/bun-realworld-app):** An advanced example combining routing and ORM usage.
+- **[gin example](https://github.com/gogjango/gjango):** Demonstrates go-pg with Gin HTTP framework for building APIs.
+- **[go-kit REST API Demo](https://github.com/Tsovak/rest-api-demo):** Shows `go-pg` usage in a microservices context.
+- **[aah framework](https://github.com/kieusonlam/golamapi):** Integration with a web framework emphasizing API development.
+
+Each project provides practical insights into model definitions, relationships, querying patterns, and configuration in diverse setups.
+
+### Where can I find tutorials and video guides?
+
+- **GraphQL Tutorial on YouTube:** A comprehensive playlist teaching GraphQL API development using Go and likely `go-pg` for database layer interaction:  
+  [GraphQL Tutorial Playlist](https://www.youtube.com/playlist?list=PLzQWIQOqeUSNwXcneWYJHUREAIucJ5UZn)
+
+- **Modern API Design with Golang, PostgreSQL, and Docker:** A detailed blog tutorial guiding you through a modern stack, complete with practical setup and coding insights:  
+  [Modern API Design Tutorial](https://bognov.tech/modern-api-design-with-golang-postgresql-and-docker)
+
+These resources offer narrative learning with example-driven explanations and code to help you build competence step-by-step.
+
+### What official documentation and reference materials should I consult?
+
+Beyond these examples and tutorials, the official documentation portals provide in-depth references and API explanations:
+
+- **Official Documentation Site:** Comprehensive, up-to-date docs covering core features, API references, and conceptual guides.  
+  [go-pg Documentation](https://pg.uptrace.dev/)
+
+- **API Reference on pkg.go.dev:** Auto-generated API docs with function signatures, types, and example usage snippets.  
+  [go-pg on pkg.go.dev](https://pkg.go.dev/github.com/go-pg/pg/v10?tab=doc)
+
+- **Example Tests from the Codebase:** The go-pg repository includes numerous example tests which illustrate various use cases and best practices in idiomatic Go. These are valuable for seeing small, focused examples of common workflows, like model usage, relations, transactions, transactions with concurrency, query customization, and error handling.
+
+### How do these resources fit into the overall learning path?
+
+Start with simple tutorials and example projects to get hands-on experience. Then leverage the official documentation and example tests to deepen your understanding of advanced topics such as:
+
+- Model relationships and joins
+- Composite and custom types
+- Transactions and bulk operations
+- Query formatting and parameterization
+- Performance best practices
+
+### Tips for Maximizing Your Learning Experience
+
+- **Clone and Run Example Projects:** Experiment with the projects linked above by cloning their repositories, running them locally, and exploring how `go-pg` is integrated.
+
+- **Try Modifying Code:** Make changes to queries, models, and configurations in example projects to see how go-pg reacts.
+
+- **Use Example Tests as Study Guides:** The example tests in the go-pg repo are condensed, practical demonstrations. Use them to learn idiomatic usage patterns.
+
+- **Refer Back to Concepts & API Docs:** Keep the API Reference and Conceptual Guides handy to clarify specific behaviors or functionalities as you encounter them in examples.
+
+- **Join the Community:** If you need help or want to share your progress, join the go-pg Discord or GitHub discussions for community support.
+
+---
+
+## Curated List of Key Resources
+
+| Resource Type       | Description                                                   | Link                                                         |
+|---------------------|---------------------------------------------------------------|--------------------------------------------------------------|
+| Example Projects    | Real apps using go-pg in diverse contexts                      | [GitHub Repositories](https://github.com/go-pg/pg#example-projects) |
+| Video Tutorials     | YouTube playlist with GraphQL integration                      | [GraphQL Playlist](https://www.youtube.com/playlist?list=PLzQWIQOqeUSNwXcneWYJHUREAIucJ5UZn) |
+| Written Tutorials   | Step-by-step blog on API design with Go and PostgreSQL        | [Modern API Blog](https://bognov.tech/modern-api-design-with-golang-postgresql-and-docker) |
+| Official Docs       | Comprehensive manual, examples, and guides                     | [pg.uptrace.dev](https://pg.uptrace.dev/)                     |
+| API Reference       | Detailed API docs and function signatures                      | [pkg.go.dev](https://pkg.go.dev/github.com/go-pg/pg/v10?tab=doc) |
+| Example Tests       | Concise runnable test examples within the go-pg codebase      | [go-pg GitHub repo](https://github.com/go-pg/pg/tree/main/examples) |
+
+---
+
+## Getting Started Example Snippet
+
+This simple example extracted from the go-pg example tests demonstrates defining models, inserting data, and querying with relationships:
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/go-pg/pg/v10"
+	"github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+	Id     int64
+	Name   string
+	Emails []string
+}
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User: "postgres",
+	})
+	defer db.Close()
+
+	// Create table for User model
+	err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{
+		Temp: true,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// Insert a user
+	user := &User{Name: "admin", Emails: []string{"admin@example.com"}}
+	_, err = db.Model(user).Insert()
+	if err != nil {
+		panic(err)
+	}
+
+	// Query the user
+	fetchedUser := &User{Id: user.Id}
+	err = db.Model(fetchedUser).WherePK().Select()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(fetchedUser)
+}
+```
+
+This snippet highlights typical steps: connecting, schema setup, inserting, and querying data.
+
+---
+
+## Next Steps
+
+Once you are familiar with the above resources:
+
+- Explore advanced querying techniques and relationship loading in [Working with Models & Data](/guides/working-with-data/advanced-queries-relations).
+- Learn about transaction management in [Managing Transactions](/guides/application-patterns/transactions).
+- Deepen your understanding of the ecosystem by exploring integration patterns in [Ecosystem & Integration](/overview/architecture-integration/integration-ecosystem).
+- Practice optimization and error handling best practices available in the Performance and API Fundamentals guides.
+
+---
+
+## Support & Community
+
+If you have questions or run into issues not covered by the documentation or examples, make use of these support channels:
+
+- **Official Documentation:** start here for comprehensive answers.
+- **Community Chat:** Join the go-pg Discord server for real-time help.
+- **GitHub Issues:** For bug reports and feature requests on the official repo.
+
+Be sure to consult the [Where to Get Help?](/faq/community-support/where-to-get-help) FAQ page for details on community support.
+
+---
+
+Thank you for choosing go-pg! Dive in, experiment, and build great applications with confidence and the support of a rich set of examples and learning resources.
+
+---
