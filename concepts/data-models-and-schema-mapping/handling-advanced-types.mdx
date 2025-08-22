@@ -1,0 +1,303 @@
+---
+title: "Handling Advanced Types (Arrays, JSON, Hstore, Composite)"
+description: "Understand go-pg's approach to advanced PostgreSQL types: arrays, JSONB, hstore, and composites. See how to leverage tags, wrappers, and interfaces for seamless mapping and querying of complex data."
+---
+
+# Handling Advanced Types (Arrays, JSON, Hstore, Composite)
+
+Understanding and effectively incorporating PostgreSQL’s advanced data types is essential for building rich, powerful applications with go-pg. This page explains how go-pg supports advanced PostgreSQL types such as arrays, JSONB, hstore, and composites, and guides you on leveraging struct tags, wrappers, and interfaces to map and query these complex types seamlessly.
+
+---
+
+## Overview
+
+go-pg extends beyond simple scalar types, offering native support for advanced PostgreSQL types. These include:
+
+- **Arrays:** Support for multilayered PostgreSQL arrays mapped to Go slices.
+- **JSONB:** Efficient binary JSON storage, manipulable through Go structs, maps, or raw bytes.
+- **Hstore:** PostgreSQL key-value store type mapped to Go maps.
+- **Composite Types:** User-defined PostgreSQL composite types mapped transparently to Go structs.
+
+This support is integral for applications requiring rich data models, enabling you to use PostgreSQL’s powerful type system without sacrificing the idiomatic experience in Go.
+
+---
+
+## Arrays
+
+### What Are Arrays in PostgreSQL?
+
+Arrays in PostgreSQL are like lists or collections of elements, e.g., integer arrays (`int[]`) or text arrays (`text[]`). Multidimensional arrays are also supported, allowing nested lists.
+
+### How go-pg Handles Arrays
+
+- Use Go slices (`[]T`) to map PostgreSQL arrays.
+- The `pg` struct tag with `,array` signals go-pg to treat a slice as a PostgreSQL array.
+
+Example:
+
+```go
+// User with string array Emails mapped to PostgreSQL text[]
+type User struct {
+    Id     int64
+    Name   string
+    Emails []string `pg:",array"`
+}
+```
+
+### Arrays and Null Values
+
+- Nil slices map to SQL `NULL` by default.
+- Use `pg:",use_zero"` to allow zero-length slices to store as empty arrays rather than `NULL`.
+
+### Advanced Array Handling via Wrappers
+
+go-pg provides wrapper types and interfaces to customize scanning and appending array data, enabling full control over encoding and decoding. This is especially powerful for multidimensional arrays or arrays of custom types.
+
+### Practical Tip
+
+Use slices of native Go types where possible (e.g., `[]string`, `[]int`) with the `array` tag for straightforward integration. For custom elements, implement the `ArrayValueScanner` interface for precise control.
+
+---
+
+## JSONB
+
+### PostgreSQL’s JSONB Type
+
+`jsonb` stores JSON data in a binary, indexable format. This is efficient for querying and storage.
+
+### Mapping JSONB in Go
+
+go-pg marshals and unmarshals JSON/JSONB fields automatically:
+
+- To Go structs or maps, encoding/decoding JSON transparently.
+- To raw `json.RawMessage` or `[]byte` if you want manual control.
+
+Example with struct:
+
+```go
+type Settings struct {
+    Preferences map[string]interface{}
+}
+
+type User struct {
+    Id       int64
+    Settings Settings `pg:",type:jsonb"`
+}
+```
+
+Example with raw message:
+
+```go
+import "encoding/json"
+
+type User struct {
+    Id   int64
+    Data json.RawMessage `pg:",type:jsonb"`
+}
+```
+
+### Zero Value and Null Handling
+
+Zero values like empty maps or structs marshal into JSON `{}` or `[]`, whereas `nil` values map to SQL `NULL`.
+
+### Tips and Best Practices
+
+- Use Go structs with JSON tags to benefit from type checking and easy querying.
+- Use `pg:",type:jsonb"` to explicitly mark JSONB columns for clarity.
+- For complex JSON modifications or partial updates, consider raw JSON to directly manipulate bytes.
+
+---
+
+## Hstore
+
+### What is Hstore?
+
+Hstore is a PostgreSQL key-value store inside a single column, suitable for flexible attributes.
+
+### Using Hstore with go-pg
+
+- Map `hstore` columns to `map[string]string` in Go.
+- Use the struct tag `pg:",hstore"` to enable correct marshaling.
+
+Example:
+
+```go
+type Device struct {
+    Id        int64
+    Attributes map[string]string `pg:",hstore"`
+}
+```
+
+### Handling Nulls
+
+Like arrays and JSONB, nil maps become SQL `NULL` by default. Use `pg:",use_zero"` to write empty maps as empty hstore entries instead of `NULL`.
+
+### Practical Tips
+
+- Hstore is ideal for optional attributes that don’t map neatly to fixed table columns.
+- For querying nested keys, you can craft SQL fragments using `?` hstore operators in your queries.
+
+---
+
+## Composite Types
+
+### What are Composite Types?
+
+Composite types are user-defined PostgreSQL structures that combine multiple fields into a single column.
+
+### Mapping Composites in go-pg
+
+- Define a Go struct matching the composite's structure.
+- Use the struct tag `pg:",composite"` to signal go-pg to marshal/unmarshal as a PostgreSQL composite type.
+
+Example:
+
+```go
+type Address struct {
+    Street  string
+    ZipCode string
+}
+
+type User struct {
+    Id      int64
+    Home    Address `pg:",composite"`
+}
+```
+
+### Relationship to Structs
+
+Composites map very naturally to Go structs, making them an expressive tool for embedding complex data.
+
+### Tips
+
+- Ensure that order and types in Go struct fields match exactly those of the PostgreSQL composite.
+- You can nest composites within other composites.
+- Using named fields in PostgreSQL composite types improves clarity and maintainability.
+
+---
+
+## Leveraging Tags and Interfaces
+
+### Struct Tags
+
+- `array`: Treats a slice as a PostgreSQL array.
+- `hstore`: Treats a map as an Hstore type.
+- `composite`: Treats a struct as a composite PostgreSQL type.
+- `type:jsonb`: Specifies JSONB column type explicitly.
+- `use_zero`: Store zero values instead of NULL.
+- `notnull`: Ensures `NOT NULL` column constraint.
+
+These allow fine control of database mappings directly from your Go model.
+
+### Implementing Interfaces for Custom Behavior
+
+For truly advanced control, implement these interfaces:
+
+- **ValueAppender**: Customize how Go values append to SQL queries.
+- **ValueScanner**: Customize how values are scanned from database results.
+- **ArrayValueScanner**: Handle scanning of array elements in the type.
+
+These allow defining your own custom marshaling behavior for complex types or to optimize performance.
+
+---
+
+## Example Putting It All Together
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+)
+
+type Address struct {
+    Street  string
+    ZipCode string
+}
+
+type User struct {
+    Id         int64
+    Name       string
+    Emails     []string          `pg:",array"`
+    Preferences map[string]interface{} `pg:",type:jsonb"`
+    Attributes map[string]string `pg:",hstore"`
+    Home       Address           `pg:",composite"`
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    user := &User{
+        Name:   "Alice",
+        Emails: []string{"alice@example.com", "alice@work.com"},
+        Preferences: map[string]interface{}{
+            "theme":   "dark",
+            "anonKey": true,
+        },
+        Attributes: map[string]string{
+            "role": "admin",
+        },
+        Home: Address{
+            Street:  "42 Main St",
+            ZipCode: "12345",
+        },
+    }
+
+    _, err := db.Model(user).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println("User inserted successfully")
+}
+```
+
+---
+
+## Common Pitfalls & Troubleshooting
+
+- **Nil vs Zero Values:** Remember nil slices/maps become SQL `NULL` unless `use_zero` is specified.
+- **Tag Omissions:** Forgetting `array`, `hstore`, or `composite` tags results in default JSON marshaling, which may not be what you want.
+- **Type Mismatches:** Go types must align exactly with PostgreSQL type definitions, especially for composites.
+- **Multidimensional Arrays:** Ensure you implement the appropriate scanning interface or use supported types.
+
+<Tip>
+If you encounter scanning or marshaling errors, verify your struct tags, data types, and whether you need to implement `ValueScanner` or `ValueAppender` for custom types.
+</Tip>
+
+---
+
+## Summary
+
+The go-pg ORM equips you to harness PostgreSQL’s advanced types naturally:
+
+- Arrays use Go slices and the `array` tag.
+- JSONB fields map to structs, maps, or raw JSON with `type:jsonb`.
+- Hstore converts seamlessly to `map[string]string` with `hstore`.
+- Composites align with Go structs tagged with `composite`.
+
+Carefully combining tags with Go’s type system creates rich, expressive data models for modern applications.
+
+For deeper mastery, explore related guides on model definitions, transactions, and real-world usage patterns.
+
+---
+
+## See Also
+
+- [Defining Models and Mapping to Tables](/guides/getting-started/modeling-data-structs)
+- [Custom PostgreSQL Types: Arrays, Hstore, Composite Types](/guides/advanced-orm-patterns/custom-types-arrays-hstore)
+- [Quickstart & Example Workflows](/overview/feature-preview-quickstart/quickstart-examples)
+- [Schema and Table Management](/api-reference/advanced-features-types/schema-management)
+
+---
+
+## Glossary
+
+- **pg struct tag:** A tag in a Go struct field definition to adjust mapping behavior.
+- **ValueScanner:** Interface to customize database read (scan) behavior.
+- **ValueAppender:** Interface to customize database write (append) behavior.
+- **ArrayValueScanner:** Interface for custom array element scanning.
+
+---
