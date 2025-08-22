@@ -1,0 +1,440 @@
+---
+title: "Defining Models and Basic CRUD"
+description: "Learn how to define Go structs as database models, set up table schemas, and perform common create, read, update, and delete operations. Illustrates both ORM modeling patterns and direct SQL execution as core developer workflows."
+---
+
+# Defining Models and Basic CRUD
+
+Learn how to define Go structs as database models, set up table schemas, and perform common create, read, update, and delete operations with go-pg. This guide walks you through both ORM modeling patterns and direct SQL execution to empower core developer workflows.
+
+---
+
+## 1. Overview
+
+### What You Will Learn
+This guide covers how to:
+- Define Go structs as ORM models with field tags that map to PostgreSQL table columns
+- Create database tables from Go struct models
+- Perform basic CRUD operations (Create, Read, Update, Delete) using go-pg ORM
+- Use useful patterns like bulk insert/update, conditional inserts, and relationship queries
+
+### What You Need
+- Go environment with `github.com/go-pg/pg/v10` installed
+- Access to a running PostgreSQL database with connection details
+- Basic understanding of Go syntax and struct types
+
+### Outcome
+By following this guide, you will create Go structs that represent database tables and use go-pg ORM methods to manipulate those tables with database operations efficiently.
+
+### Approximate Completion Time
+15-30 minutes for hands-on coding and running examples
+
+### Skill Level
+Beginner to Intermediate in Go database development
+
+---
+
+## 2. Defining Models
+
+The foundation of go-pg ORM is defining Go structs that map to tables.
+
+### Example Model Definition
+```go
+// User represents a database model for users.
+type User struct {
+    Id     int64    // Primary key
+    Name   string   
+    Emails []string // Stored as PostgreSQL array
+}
+
+// Optional: Implement Stringer for debugging
+func (u User) String() string {
+    return fmt.Sprintf("User<%d %s %v>", u.Id, u.Name, u.Emails)
+}
+
+// Story represents a relational model referencing User.
+type Story struct {
+    Id       int64
+    Title    string
+    AuthorId int64
+    Author   *User `pg:"rel:has-one"` // Has-one relation
+}
+
+func (s Story) String() string {
+    return fmt.Sprintf("Story<%d %s %s>", s.Id, s.Title, s.Author)
+}
+```
+
+#### Notes:
+- The `pg:"rel:has-one"` tag on `Author` sets up an ORM relationship.
+- Arrays and slices automatically map to PostgreSQL array types.
+
+---
+
+## 3. Creating Tables from Models
+
+Use `db.Model(model).CreateTable(&orm.CreateTableOptions{Temp: true})` to create tables.
+
+Example schema creation:
+```go
+func createSchema(db *pg.DB) error {
+    models := []interface{}{
+        (*User)(nil),
+        (*Story)(nil),
+    }
+    for _, model := range models {
+        err := db.Model(model).CreateTable(&orm.CreateTableOptions{
+            Temp: true,
+        })
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+```
+
+This will generate SQL `CREATE TABLE` commands from the structs.
+
+---
+
+## 4. Basic CRUD Operations Using ORM
+
+### Creating/Inserting Records
+```go
+db := pg.Connect(&pg.Options{User: "postgres"})
+defer db.Close()
+
+user := &User{Name: "admin", Emails: []string{"admin1@admin", "admin2@admin"}}
+_, err := db.Model(user).Insert()
+if err != nil {
+    panic(err)
+}
+fmt.Println(user) // User object now has Id set
+```
+
+### Reading/Selecting Records
+- Select one by primary key:
+```go
+retrievedUser := &User{Id: user.Id}
+err = db.Model(retrievedUser).WherePK().Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(retrievedUser)
+```
+
+- Select all records:
+```go
+var users []User
+err = db.Model(&users).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(users)
+```
+
+- Select with relations:
+```go
+story := new(Story)
+err = db.Model(story).
+    Relation("Author").
+    Where("story.id = ?", someStoryId).
+    Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(story)
+```
+
+### Updating Records
+```go
+user.Name = "updated name"
+_, err = db.Model(user).WherePK().Update()
+if err != nil {
+    panic(err)
+}
+```
+
+- Use `UpdateNotZero()` to skip zero-value fields
+- Use `.Column("col1", "col2")` to selectively update columns
+
+### Deleting Records
+```go
+_, err = db.Model(user).WherePK().Delete()
+if err != nil {
+    panic(err)
+}
+// Confirm deletion
+err = db.Model(user).WherePK().Select()
+fmt.Println(err) // Should be 'pg: no rows in result set'
+```
+
+---
+
+## 5. Bulk Operations
+
+### Bulk Insert
+```go
+books := []Book{{Title: "Book 1"}, {Title: "Book 2"}}
+_, err := db.Model(&books).Insert()
+```
+
+### Bulk Update
+```go
+books[0].Title = "Updated Book 1"
+books[1].Title = "Updated Book 2"
+_, err = db.Model(&books).Column("title").Update()
+```
+
+### Bulk Delete
+```go
+_, err = db.Model(&books).Delete()
+```
+
+---
+
+## 6. Using Conditional Inserts (Upsert)
+
+You can insert and specify conflict behaviors.
+
+### Insert or Do Nothing
+```go
+book := &Book{ID: 100, Title: "book 100"}
+res, err := db.Model(book).OnConflict("DO NOTHING").Insert()
+if res.RowsAffected() > 0 {
+    fmt.Println("created")
+} else {
+    fmt.Println("did nothing")
+}
+```
+
+### Insert or Update on Conflict
+```go
+for i := 0; i < 2; i++ {
+    book := &Book{ID: 100, Title: fmt.Sprintf("title version #%d", i)}
+    _, err := db.Model(book).
+        OnConflict("(id) DO UPDATE").
+        Set("title = EXCLUDED.title").
+        Insert()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(book)
+}
+```
+
+---
+
+## 7. Query Examples: Advanced Select Patterns
+
+- Select some columns only:
+```go
+var book Book
+err := db.Model(&book).
+    Column("book.id", "book.title").
+    OrderExpr("book.id ASC").
+    Limit(1).
+    Select()
+```
+
+- Use `WhereIn`:
+```go
+var books []Book
+err := db.Model(&books).WhereIn("id IN (?)", []int{1, 2}).Select()
+```
+
+- Apply filters dynamically:
+```go
+filter := func(q *pg.Query) (*pg.Query, error) {
+    if authorId != 0 {
+        q = q.Where("author_id = ?", authorId)
+    }
+    return q, nil
+}
+
+var books []Book
+authorId = 1
+err := db.Model(&books).
+    Apply(filter).
+    Select()
+```
+
+- Count rows:
+```go
+count, err := db.Model(&Book{}).Count()
+```
+
+- Check existence:
+```go
+exists, err := db.Model(&Book{}).Where("author_id = ?", 1).Exists()
+```
+
+---
+
+## 8. Model Relationships (Basic Examples)
+
+### Has One
+```go
+type User struct {
+    Id        int
+    Name      string
+    ProfileId int
+    Profile   *Profile `pg:"rel:has-one"`
+}
+
+var users []User
+err := db.Model(&users).
+    Relation("Profile").
+    Select()
+```
+
+### Belongs To
+```go
+type Profile struct {
+    Id     int
+    Lang   string
+    UserId int
+}
+
+var profiles []Profile
+err := db.Model(&profiles).
+    Relation("User").
+    Select()
+```
+
+### Has Many
+```go
+type User struct {
+    Id       int
+    Name     string
+    Profiles []*Profile `pg:"rel:has-many"`
+}
+
+var user User
+err := db.Model(&user).
+    Relation("Profiles", func(q *pg.Query) (*pg.Query, error) {
+        return q.Where("active IS TRUE"), nil
+    }).
+    First()
+```
+
+### Many to Many
+```go
+type Project struct {
+    ID        string `pg:",pk"`
+    CompanyID string `pg:",pk"`
+    Documents []Document `pg:",many2many:project_documents"`
+}
+
+err := db.Model(&project).
+    WherePK().
+    Relation("Documents").
+    Select()
+```
+
+---
+
+## 9. Practical Tips & Best Practices
+
+- Always check errors from ORM methods to handle database issues.
+- Use tagged relations to efficiently load related data in single queries.
+- When updating, use `UpdateNotZero()` to avoid overwriting columns with zero values unintentionally.
+- Use bulk insert/update/delete methods to optimize performance over looping single-row operations.
+- Remember to manage database connections with `defer db.Close()`.
+- Define your models clearly with appropriate primary key tags, e.g., `pg:",pk"`.
+
+---
+
+## 10. Troubleshooting Common Issues
+
+<AccordionGroup title="Common Problems and Solutions">
+<Accordion title="Model Not Mapping to Table Correctly">
+- Ensure that your struct tags define primary keys correctly using `pg:",pk"`.
+- Use `CreateTable` to explicitly set up schema if tables don't exist.
+- Use `DiscardUnknownColumns` to avoid errors with unmatched columns.
+</Accordion>
+<Accordion title="Insert or Update Fails With Conflict">
+- Use `OnConflict` clauses to specify conflict behavior.
+- Check that primary key fields are correctly set before inserts.
+</Accordion>
+<Accordion title="Related Data Fails to Load">
+- Verify relation tags like `rel:has-one`, `rel:has-many` are correctly applied.
+- Use `.Relation("RelationName")` in queries to eagerly load relations.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## 11. Next Steps & Related Guides
+
+After mastering basic model definitions and CRUD:
+- Explore [Advanced Queries and Model Relationships](/guides/working-with-data/advanced-queries-relations) to deepen relation handling.
+- Learn about [Arrays, JSONB, and Hstore](/guides/working-with-data/arrays-jsonb-hstore) for complex data types.
+- Understand [Soft Deletes and Timestamps](/guides/working-with-data/soft-delete-timestamps) for auditability.
+- Check out [Managing Transactions](/guides/application-patterns/transactions) for data integrity.
+
+---
+
+## 12. Additional Example: Quick Schema and CRUD
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+    Id     int64
+    Name   string
+    Emails []string
+}
+
+func createSchema(db *pg.DB) error {
+    models := []interface{}{(*User)(nil)}
+    for _, model := range models {
+        err := db.Model(model).CreateTable(&orm.CreateTableOptions{Temp: true})
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    err := createSchema(db)
+    if err != nil {
+        panic(err)
+    }
+
+    user := &User{Name: "Alice", Emails: []string{"alice@example.com"}}
+    _, err = db.Model(user).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println("Inserted user:", user)
+
+    fetchedUser := &User{Id: user.Id}
+    err = db.Model(fetchedUser).WherePK().Select()
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println("Fetched user:", fetchedUser)
+}
+```
+
+Run this example to quickly verify your setup and get practical experience.
+
+---
+
+For source code and more examples, visit the [go-pg GitHub repository](https://github.com/go-pg/pg).
+
+---
