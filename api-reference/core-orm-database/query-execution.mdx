@@ -1,0 +1,352 @@
+---
+title: "Query Execution and ORM Methods"
+description: "Understand how to perform SQL queries and ORM operations, including selecting, inserting, updating, and deleting data. This page details the Model API, query builder, bulk actions, relationships, and retrieval techniques with practical examples for each method."
+---
+
+# Query Execution and ORM Methods
+
+This documentation page guides you through performing SQL queries and Object-Relational Mapping (ORM) operations using go-pg. You will learn how to select, insert, update, and delete data efficiently by leveraging the Model API and the query builder. This includes working with relationships, bulk operations, prepared statements, and advanced query patterns with practical examples.
+
+---
+
+## Overview of Query Execution and ORM
+
+At its core, go-pg offers a rich API that lets you interact with PostgreSQL databases using both raw SQL and a powerful ORM layer. This enables you to write expressive, type-safe queries and perform CRUD (Create, Read, Update, Delete) operations on Go structs that represent your tables.
+
+This page focuses specifically on the methods that execute queries and manage ORM operations, including how to use models, build queries, and handle relationships.
+
+---
+
+## Database Client Methods for Query Execution
+
+The primary entry points for executing queries are methods provided by the `DB` client such as:
+
+- `Exec` / `ExecContext`: Run a query that performs an operation but does not return rows (e.g., INSERT, UPDATE, DELETE).
+- `Query` / `QueryContext`: Run a query that returns multiple rows.
+- `QueryOne` / `QueryOneContext`: Run a query expected to return exactly one row.
+- `CopyFrom` and `CopyTo`: Perform bulk data copy operations using PostgreSQL `COPY` commands.
+
+These methods accept SQL strings and parameters supporting placeholders, enabling safe query building.
+
+### Example: Executing a Simple Query
+
+```go
+res, err := db.Exec(`CREATE TEMP TABLE example(id serial, name text)`)  // Create temp table
+if err != nil {
+    panic(err)
+}
+
+fmt.Println(res.RowsAffected())  // Typically returns -1 for DDL statements
+```
+
+### Example: Querying Single Row Into Variables
+
+```go
+var count int
+_, err := db.QueryOne(pg.Scan(&count), `SELECT count(*) FROM users WHERE active = ?`, true)
+if err != nil {
+    panic(err)
+}
+fmt.Println(count)
+```
+
+---
+
+## The Model API and ORM Query Building
+
+The `Model` method returns a query builder focused on working with defined Go structs as models:
+
+```go
+q := db.Model(&users)
+```
+
+From this base, you can chain methods to construct sophisticated queries that automatically map to your structs.
+
+### Core Methods
+
+| Method         | Purpose                          |
+|----------------|---------------------------------|
+| `Model`        | Start a query on a model or slice |
+| `Select`       | Retrieve records into the model |
+| `Insert`       | Insert records from the model   |
+| `Update`       | Update records based on the model |
+| `Delete`       | Delete or soft-delete records   |
+| `Where`        | Filter records                  |
+| `Relation`     | Load associations / relations  |
+| `Limit`, `Offset` | Control paging in the result  |
+
+---
+
+### Selecting Data with `Model` and `Select`
+
+You typically start with `Model` passing a pointer to a struct or a slice and call `Select` to execute a query:
+
+```go
+var users []User
+err := db.Model(&users).
+    Where("age > ?", 18).
+    Order("id ASC").
+    Limit(10).
+    Select()
+if err != nil {
+    panic(err)
+}
+```
+
+This will populate `users` with up to 10 users older than 18, ordered by ID.
+
+### Loading Associations with `Relation`
+
+You can load related data eagerly by specifying relations:
+
+```go
+var books []Book
+err := db.Model(&books).
+    Relation("Author").
+    Relation("Genres").
+    Limit(5).
+    Select()
+```
+
+This automatically performs the necessary joins and loads the `Author` and `Genres` fields on each book.
+
+---
+
+## Inserting Data
+
+Insert new records by creating a model instance and calling `Insert`:
+
+```go
+user := &User{Name: "Alice", Age: 30}
+res, err := db.Model(user).Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+If your table has `RETURNING` clauses (e.g., auto-incremented IDs), the values will be filled into the struct after insert.
+
+### Insert or Select (Upsert-like)
+
+The `SelectOrInsert` method tries to select a record and inserts it if absent:
+
+```go
+inserted, err := db.Model(&user).Where("name = ?", "Alice").SelectOrInsert()
+if err != nil {
+    panic(err)
+}
+if inserted {
+    fmt.Println("New user inserted")
+} else {
+    fmt.Println("User already exists")
+}
+```
+
+---
+
+## Updating Data
+
+Use `Update` or `UpdateNotZero` on models that represent existing rows:
+
+```go
+user.Age = 31
+_, err := db.Model(user).WherePK().Update()
+if err != nil {
+    panic(err)
+}
+```
+
+`UpdateNotZero` skips zero-value fields to avoid overwriting columns accidentally.
+
+### Using `Set` and `Value`
+
+To update fields without changing the entire model, use `Set` or `Value` to provide explicit column-value pairs:
+
+```go
+_, err := db.Model(&User{}).
+    Set("age = age + 1").
+    Where("active = ?", true).
+    Update()
+```
+
+---
+
+## Deleting Records
+
+Deletion either performs a hard delete or soft delete if supported by the model (e.g., a null `deleted_at` column).
+
+### Soft Delete
+
+```go
+_, err := db.Model(&user).WherePK().Delete()  // sets deleted_at timestamp
+```
+
+### Force Delete
+
+```go
+_, err := db.Model(&user).ForceDelete()  // permanently removes record
+```
+
+---
+
+## Bulk Operations and Copying Data
+
+For efficient batch loading, go-pg supports bulk copying using PostgreSQL `COPY`:
+
+- `CopyFrom` loads data from an `io.Reader` (e.g., file or memory buffer) into a table.
+- `CopyTo` dumps data from a query to an `io.Writer`.
+
+```go
+// Copy CSV data into table
+reader := strings.NewReader("hello,5\nfoo,3\n")
+_, err := db.CopyFrom(reader, `COPY words FROM STDIN WITH CSV`)
+if err != nil {
+    panic(err)
+}
+
+// Copy data to buffer
+var buf bytes.Buffer
+_, err = db.CopyTo(&buf, `COPY words TO STDOUT WITH CSV`)
+if err != nil {
+    panic(err)
+}
+fmt.Println(buf.String())
+```
+
+---
+
+## Prepared Statements
+
+You can prepare statements to optimize repeated queries with different parameters:
+
+```go
+stmt, err := db.Prepare(`SELECT $1::text, $2::text`)
+if err != nil {
+    panic(err)
+}
+defer stmt.Close()
+
+var s1, s2 string
+_, err = stmt.QueryOne(pg.Scan(&s1, &s2), "foo", "bar")
+if err != nil {
+    panic(err)
+}
+fmt.Println(s1, s2)
+```
+
+Prepared statements are safe for concurrent use and support context cancellation and retries.
+
+---
+
+## Common User Flows
+
+### 1. Querying Multiple Rows
+
+```go
+var users []User
+res, err := db.Model(&users).Where("active = ?", true).Limit(10).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Printf("Retrieved %d users\n", len(users))
+```
+
+### 2. Querying a Single Row
+
+```go
+var user User
+res, err := db.Model(&user).Where("id = ?", 123).Select()
+if err != nil {
+    panic(err)
+}
+if res.RowsReturned() == 0 {
+    fmt.Println("No user found")
+}
+```
+
+### 3. Inserting a New Record
+
+```go
+user := &User{Name: "Bob"}
+res, err := db.Model(user).Insert()
+if err != nil {
+    panic(err)
+}
+fmt.Printf("Inserted user with ID %d\n", user.ID)
+```
+
+### 4. Updating with Conditions
+
+```go
+_, err := db.Model(&User{}).
+    Where("id = ?", 123).
+    Set("name = ?", "New Name").
+    Update()
+if err != nil {
+    panic(err)
+}
+```
+
+### 5. Deleting with Soft Delete
+
+```go
+_, err := db.Model(&user).WherePK().Delete()
+if err != nil {
+    panic(err)
+}
+```
+
+### 6. Performing a Bulk Insert
+
+```go
+users := []User{{Name:"Alice"}, {Name:"Bob"}}
+res, err := db.Model(&users).Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+---
+
+## Best Practices
+
+- Use `QueryOne`/`ExecOne` when expecting exactly one row to catch unexpected results early.
+- Prefer `Model` queries over raw SQL for safer type mapping and expressive code.
+- Use `Relation` to eagerly load associations instead of manual join queries.
+- Utilize prepared statements for high-frequency queries with different params.
+- Handle soft deletes by leveraging `Delete()` method on models with `deleted_at`.
+- Use `CopyFrom` and `CopyTo` for large data transfers instead of row-by-row inserts.
+
+---
+
+## Common Pitfalls & Troubleshooting
+
+- **No Rows Returned**: When `QueryOne` returns `ErrNoRows`, verify query conditions or use `Query` for optional results.
+- **Multiple Rows Error**: `QueryOne` errors with `ErrMultiRows` if multiple rows are returned; ensure parameters enforce uniqueness.
+- **Nil Model Error**: Ensure that you pass pointers to structs or slices for `Model` and query methods.
+- **Soft Delete Confusion**: If rows seem invisible after deletes, check if the table supports soft deletes and toggle with `AllWithDeleted()`.
+- **Parameter Mismatch**: Ensure placeholders (?) in queries match the count and type of provided arguments.
+
+---
+
+## Related Documentation and Links
+
+- [Database Client and Connections](/api-reference/core-orm-database/client-connection) – configuring connections and pooling
+- [Transactions and Prepared Statements](/api-reference/core-orm-database/transactions-prepared) – for transaction management
+- [Notifications: LISTEN & NOTIFY](/api-reference/core-orm-database/notifications-listening) – real-time events handling
+- [Advanced Features Types](/api-reference/advanced-features-types/type-mapping) – type handling
+- [Working with Associations](/guides/advanced-orm-patterns/working-with-associations) – ORM relationships
+- [Bulk and Batch Operations](/guides/advanced-orm-patterns/bulk-operations) – for efficient bulk manipulations
+
+---
+
+## Next Steps
+
+- Explore the [Quickstart & Examples](/api-reference/common-operations-examples/quickstart-scenarios) to see common usage patterns.
+- Review [Error Handling & Status Codes](/api-reference/common-operations-examples/error-handling-status-codes) to build robust applications.
+- Learn [Transaction Management](/guides/real-world-integration-patterns/transaction-management) for safe data consistency.
+- Monitor and debug queries with [Observability & Debugging](/guides/real-world-integration-patterns/observability-debugging).
+
+---
+
+This page empowers you to master data querying and manipulation in go-pg with confidence, helping you achieve maintainable and performant Go applications backed by PostgreSQL.
