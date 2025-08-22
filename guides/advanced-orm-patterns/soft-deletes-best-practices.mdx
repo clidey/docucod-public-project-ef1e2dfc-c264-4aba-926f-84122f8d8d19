@@ -1,0 +1,310 @@
+---
+title: "Implementing Soft Deletes"
+description: "Step-by-step guidance for enabling soft-delete patterns in go-pg, including model setup, query adaptations, and restoration/deletion best practices for reliable data management."
+---
+
+# Implementing Soft Deletes with go-pg
+
+## Overview
+This guide walks you through how to implement soft-delete patterns in go-pg effectively. Soft deletes allow you to mark records as deleted without physically removing them from the database, preserving data integrity and enabling easy restoration.
+
+You'll learn how to set up your models to support soft deletes, adapt your queries to account for soft-deleted data, and use go-pg's API to restore or permanently delete records safely.
+
+---
+
+## Prerequisites
+- Familiarity with Go and basic go-pg setup.
+- A working database connection using go-pg.
+- Defined Go structs representing your database tables (models).
+
+---
+
+## What You Will Achieve
+- Enable soft-delete functionality on your models.
+- Perform soft deletes that mark data as deleted without removing it.
+- Query for active versus soft-deleted records.
+- Restore soft-deleted records and forcibly delete records permanently.
+
+---
+
+## Time Estimate
+10-20 minutes depending on experience with go-pg and Go.
+
+---
+
+## Step-by-Step Guide
+
+### 1. Define a Soft Delete Field in Your Model
+The cornerstone of soft-delete support in go-pg is adding a special field to your struct annotated with the `pg:",soft_delete"` tag.
+
+Example with a timestamp field:
+
+```go
+import (
+    "time"
+    "github.com/go-pg/pg/v10/types"
+)
+
+type Video struct {
+    Id        int
+    Name      string
+    DeletedAt time.Time `pg:",soft_delete"`
+}
+```
+
+If you want to use a custom time wrapper type, implement the necessary `types.ValueScanner` and `types.ValueAppender` interfaces. For example:
+
+```go
+type CustomTime struct {
+    Time time.Time
+}
+
+var _ types.ValueScanner = (*CustomTime)(nil)
+var _ types.ValueAppender = (*CustomTime)(nil)
+
+func (tm *CustomTime) ScanValue(rd types.Reader, n int) error {
+    var err error
+    tm.Time, err = types.ScanTime(rd, n)
+    return err
+}
+
+func (tm *CustomTime) AppendValue(b []byte, flags int) ([]byte, error) {
+    return types.AppendTime(b, tm.Time, flags), nil
+}
+
+// Then use in your struct:
+
+type Video struct {
+    Id        int
+    Name      string
+    DeletedAt CustomTime `pg:",soft_delete"`
+}
+```
+
+<Tip>
+The soft-delete field must be nullable or zero-able—this field stores the deletion timestamp. When `null` or zero, the record is active.
+</Tip>
+
+---
+
+### 2. Perform Soft Deletes
+Use the standard `Delete()` method on your model. go-pg automatically intercepts this and sets the soft-delete timestamp instead of physically deleting the row.
+
+Example:
+
+```go
+video := &Video{Id: 1}
+_, err := db.Model(video).WherePK().Delete()
+if err != nil {
+    panic(err)
+}
+```
+
+Expected Outcome:
+- The record stays in the database.
+- The `DeletedAt` field populates with the deletion time.
+
+---
+
+### 3. Query Only Active (Non-Deleted) Records
+By default, any query with go-pg excludes soft-deleted records automatically.
+
+Example:
+
+```go
+var videos []Video
+err := db.Model(&videos).Select()
+if err != nil {
+    panic(err)
+}
+```
+
+Outcome:
+- Only videos with `DeletedAt` unset will be returned.
+
+---
+
+### 4. Query Including Soft-Deleted Records
+To include soft-deleted records, use the `.Deleted()` method on your query.
+
+Example:
+
+```go
+var allVideos []Video
+err := db.Model(&allVideos).Deleted().Select()
+if err != nil {
+    panic(err)
+}
+```
+
+Now, the result includes both active and soft-deleted videos.
+
+---
+
+### 5. Query Only Soft-Deleted Records
+To count or select only soft-deleted rows, chain the `.Deleted()` method and add `.WhereDeleted()` filter.
+
+Example - Counting soft-deleted videos:
+
+```go
+count, err := db.Model((*Video)(nil)).Deleted().Count()
+if err != nil {
+    panic(err)
+}
+fmt.Println("Deleted count:", count)
+```
+
+---
+
+### 6. Restore Soft-Deleted Records
+Restoring means clearing the `DeletedAt` timestamp on a soft-deleted record. go-pg does not provide a dedicated restore method but you can update the field manually:
+
+```go
+video := &Video{Id: 1}
+_, err := db.Model(video).WherePK().Set("deleted_at = NULL").Update()
+if err != nil {
+    panic(err)
+}
+```
+
+After this, the record is considered active again.
+
+---
+
+### 7. Hard Delete (Force Delete) Records
+When you want to permanently remove a soft-deleted record, use `.ForceDelete()` to physically delete:
+
+```go
+video := &Video{Id: 1}
+_, err := db.Model(video).WherePK().ForceDelete()
+if err != nil {
+    panic(err)
+}
+```
+
+This bypasses the soft-delete mechanism and deletes the row from the table.
+
+---
+
+## Best Practices & Tips
+- Always prefer soft deletes over hard deletes to retain historical data.
+- Use `Deleted()` carefully to include deleted records only when explicitly needed.
+- Implement custom soft-delete timestamp types if you need special serialization.
+- Restore soft deletes only after explicit user action or business confirmation.
+
+---
+
+## Common Pitfalls
+
+<AccordionGroup title="Troubleshooting Soft Deletes">
+<Accordion title="Soft delete field missing or incorrect tag">
+Make sure your struct field is properly tagged with `pg:",soft_delete"`. Without this tag, go-pg will not treat the field as a soft-delete marker.
+</Accordion>
+<Accordion title="Delete() physically removes rows instead of soft deleting">
+Confirm your model struct contains the soft-delete field tagged correctly, and that you are using go-pg v10 or later. The soft delete mechanism hooks into the Delete operation.
+</Accordion>
+<Accordion title="Including soft deleted records does not work">
+Use `.Deleted()` explicitly on the query. If you forget this, queries always exclude soft deleted rows.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Real-World Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/types"
+)
+
+type Video struct {
+    Id        int
+    Name      string
+    DeletedAt CustomTime `pg:",soft_delete"`
+}
+
+type CustomTime struct {
+    Time time.Time
+}
+
+func (tm *CustomTime) ScanValue(rd types.Reader, n int) error {
+    var err error
+    tm.Time, err = types.ScanTime(rd, n)
+    return err
+}
+
+func (tm *CustomTime) AppendValue(b []byte, flags int) ([]byte, error) {
+    return types.AppendTime(b, tm.Time, flags), nil
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User: "postgres",
+    })
+    defer db.Close()
+
+    video := &Video{Id: 1, Name: "Cool Video"}
+    _, err := db.Model(video).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    // Soft delete the video
+    _, err = db.Model(video).WherePK().Delete()
+    if err != nil {
+        panic(err)
+    }
+
+    // Count visible videos
+    count, err := db.Model((*Video)(nil)).Count()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("Active videos count:", count) // Output: 0
+
+    // Count soft deleted
+    deletedCount, err := db.Model((*Video)(nil)).Deleted().Count()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("Deleted videos count:", deletedCount) // Output: 1
+
+    // Force delete
+    _, err = db.Model(video).WherePK().ForceDelete()
+    if err != nil {
+        panic(err)
+    }
+
+    deletedCount, err = db.Model((*Video)(nil)).Deleted().Count()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("Deleted videos count after force delete:", deletedCount) // Output: 0
+}
+```
+
+---
+
+## Next Steps & Related Guides
+- [Bulk and Batch Operations](https://pg.uptrace.dev/guides/advanced-orm-patterns/bulk-operations) — optimize deletes and updates in large datasets.
+- [Working with Associations](https://pg.uptrace.dev/guides/advanced-orm-patterns/working-with-associations) — integrate soft deletes with related entities.
+- [Schema and Table Management](https://pg.uptrace.dev/api-reference/advanced-features-types/schema-management) — manage migrations including soft-delete columns.
+- [Quickstart & Example Workflows](https://pg.uptrace.dev/overview/feature-preview-quickstart/quickstart-examples) — accelerate your basic usage mastery.
+
+
+---
+
+## References
+- go-pg Official Documentation: https://pg.uptrace.dev/
+- Bun ORM Migration Guide: https://bun.uptrace.dev/guide/pg-migration.html (for future upgrades)
+- PostgreSQL Documentation on soft deletes patterns
+
+---
+
+Implementing soft deletes with go-pg offers a robust approach to managing data lifecycle while maintaining auditability and flexibility. Follow the steps above to integrate this capability seamlessly into your Go applications.
