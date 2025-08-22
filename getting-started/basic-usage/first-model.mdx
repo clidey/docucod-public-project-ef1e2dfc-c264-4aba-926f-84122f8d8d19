@@ -1,0 +1,255 @@
+---
+title: "Defining Your First Model"
+description: "Create and understand your first Go struct model mapped to a PostgreSQL table. Learn about field mappings, relationships, struct tags, and ORM conventions that power go-pg’s model-aware features."
+---
+
+# Defining Your First Model
+
+Creating a Go struct that maps seamlessly to a PostgreSQL table is the foundational step when working with go-pg. This guide walks you through defining your first model with concrete examples, explaining how fields translate into table columns, how relationships are expressed, and how struct tags customize the ORM behavior.
+
+---
+
+## 1. Understanding Go Struct Models in go-pg
+
+In go-pg, models are native Go structs that represent database tables. Each field corresponds to a column, and go-pg uses reflection and struct tags to determine how to map your struct fields to SQL.
+
+### Why Define Models?
+- **Data Mapping:** Define how your app's data is stored and retrieved.
+- **Query Power:** Use go-pg ORM methods with typed, structured data.
+- **Relationships:** Easily express and load related rows through associations.
+
+### Key Concepts
+- **Primary Keys:** Use `pg:",pk"` tag to identify primary key fields.
+- **Nullable Fields:** By default, zero values marshal as SQL `NULL` unless overridden.
+- **Field Tags:** Customize column names, constraints, relationships, and behaviors.
+
+---
+
+## 2. Basic Model Definition with Example
+
+Here's a simple example of defining a `User` model:
+
+```go
+package main
+
+type User struct {
+    Id     int64    `pg:",pk"`       // Primary key column 'id'
+    Name   string                      // Column 'name'
+    Emails []string                   // Marshalled as JSON by default
+}
+```
+
+### What Happens Here?
+- `Id` is tagged as primary key.
+- `Name` maps to a `TEXT` column.
+- `Emails` stores as a JSON array column by default.
+
+### Creating Tables from Models
+You can create the corresponding database table with:
+
+```go
+err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{})
+if err != nil {
+    panic(err)
+}
+```
+This creates table `users` with `id`, `name`, and `emails` columns automatically.
+
+---
+
+## 3. Defining Relationships
+
+go-pg supports common relational patterns: `has-one`, `belongs-to`, `has-many`, and `many-to-many`. You declare these in struct fields using tags and pointer types.
+
+### Has-One Relationship
+```go
+type Story struct {
+    Id       int64
+    Title    string
+    AuthorId int64
+    Author   *User `pg:"rel:has-one"`
+}
+```
+Here, `Story` has one `Author`. Loading the story with `Relation("Author")` loads its User.
+
+### Has-Many Relationship
+```go
+type User struct {
+    Id       int
+    Profiles []*Profile `pg:"rel:has-many"`
+}
+```
+User has many Profiles. You can load all active profiles for a user using query modifiers.
+
+### Belongs-To Relationship
+```go
+type Profile struct {
+    Id     int
+    Lang   string
+    UserId int
+}
+
+type User struct {
+    Id      int
+    Profile *Profile `pg:"rel:belongs-to"`
+}
+```
+Profile references User; User `belongs-to` Profile enables inverse association.
+
+### Many-to-Many Relationship
+```go
+type Order struct {
+    Id    int
+    Items []Item `pg:"many2many:order_to_items"`
+}
+```
+Use a join table (e.g., `order_to_items`) to model many-to-many relations.
+
+---
+
+## 4. Customizing Model Fields with Tags
+
+Tags control how go-pg treats each field:
+
+- `pg:",pk"` — marks primary key
+- `pg:",notnull"` — adds NOT NULL SQL constraint
+- `pg:",use_zero"` — stores zero values as-is rather than SQL NULL
+- `pg:"rel:has-one"` / `has-many`, etc. — specify relationships
+- `pg:",json_use_number"` — decode JSON fields as `json.Number`
+- `pg:",soft_delete"` — marks a timestamp field for soft deletes
+
+Example with tags:
+
+```go
+type Event struct {
+    ID     int
+    Active bool `pg:",use_zero"`
+}
+```
+Stores `Active` as `true` or `false` explicitly in SQL.
+
+---
+
+## 5. Working Example: Defining User and Story Models
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+    Id     int64    `pg:",pk"`
+    Name   string
+    Emails []string
+}
+
+type Story struct {
+    Id       int64
+    Title    string
+    AuthorId int64
+    Author   *User `pg:"rel:has-one"`
+}
+
+func createSchema(db *pg.DB) error {
+    models := []interface{}{
+        (*User)(nil),
+        (*Story)(nil),
+    }
+    for _, model := range models {
+        err := db.Model(model).CreateTable(&orm.CreateTableOptions{
+            Temp: true,
+        })
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    if err := createSchema(db); err != nil {
+        panic(err)
+    }
+
+    user := &User{Name: "admin", Emails: []string{"admin@example.com"}}
+    if _, err := db.Model(user).Insert(); err != nil {
+        panic(err)
+    }
+
+    story := &Story{Title: "Go-pg is awesome", AuthorId: user.Id}
+    if _, err := db.Model(story).Insert(); err != nil {
+        panic(err)
+    }
+
+    loadedStory := new(Story)
+    if err := db.Model(loadedStory).
+        Relation("Author").
+        Where("story.id = ?", story.Id).
+        Select(); err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("Story Title: %s, Author: %s\n", loadedStory.Title, loadedStory.Author.Name)
+}
+```
+
+### Expected Output
+```
+Story Title: Go-pg is awesome, Author: admin
+```
+
+---
+
+## 6. Best Practices and Tips
+
+- Always tag primary keys explicitly with `pg:",pk"` for clarity and correct ORM behavior.
+- Use pointer fields for relations to leverage lazy/eager loading (`*User`, `[]*Profile`).
+- Initialize your schema using `CreateTable` before inserting data.
+- Use struct tags to customize constraints based on your data needs.
+- Remember zero values default serialize as SQL NULL unless overridden.
+
+---
+
+## 7. Troubleshooting Common Issues
+
+- **Problem:** "no rows in result set" when selecting.
+  - **Solution:** Ensure primary keys are correctly set and the record exists.
+
+- **Problem:** Relationship fields not loaded.
+  - **Solution:** Use `.Relation("FieldName")` explicitly when querying.
+
+- **Problem:** Fields not matching database columns.
+  - **Solution:** Confirm field names and tags match table schema; use `pg:"column_name"` tag if needed.
+
+- **Problem:** JSON fields not unmarshalled correctly.
+  - **Solution:** Use appropriate tags like `json_use_number` or map types.
+
+---
+
+## 8. Next Steps
+
+Once your first model is defined and working:
+
+- Explore **Creating Tables & Basic CRUD** to learn inserting, updating, deleting, and querying.
+- Learn about **Associations** to handle complex relationships and joins.
+- Check out **Defining Models and Mapping to Tables** guide for deeper schema mapping techniques.
+
+---
+
+## References
+
+- [go-pg README](https://github.com/go-pg/pg/blob/main/README.md) - Get overall context and examples.
+- [Creating Tables](https://pg.uptrace.dev/guide/getting-started/basic-crud-workflows.html) - How to map Go structs to DB tables.
+- [Working with Relations](https://pg.uptrace.dev/guide/advanced-orm-patterns/working-with-associations.html) - In-depth relationship documentation.
+- [Using Struct Tags](https://pkg.go.dev/github.com/go-pg/pg/v10#section-documentation) - Detailed tag usage.
+
+---
+
+This page fits into your learning journey in the broader [Getting Started](https://pg.uptrace.dev/) section where you will move next to CRUD operations and complex queries leveraging the models you create here.
