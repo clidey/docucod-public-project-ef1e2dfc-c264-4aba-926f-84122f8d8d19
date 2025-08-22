@@ -1,0 +1,332 @@
+---
+title: "Validation: Verifying Your Setup"
+description: "Practical steps and code snippets to test and confirm successful connection and CRUD operations. Empowers users to verify their environment before writing real application logic."
+---
+
+# Validation: Verifying Your Setup
+
+Ensure your go-pg setup is fully functional before building real application logic. This guide walks you through practical tests and code snippets to verify your database connection and perform basic CRUD (Create, Read, Update, Delete) operations.
+
+By following these steps, you proactively confirm your environment is correctly configured, saving time debugging issues later.
+
+---
+
+## Prerequisites
+
+Before you begin, confirm:
+
+- You have a running PostgreSQL instance reachable by your Go application.
+- Your go-pg package is installed and imported properly.
+- Your database connection parameters (host, user, password, database name) are correctly set.
+- Basic familiarity with Go's syntax and project structure.
+
+If you have not completed installation or configuration, review the following pages:
+
+- [Installing go-pg](/getting-started/setup/installing-go-pg)
+- [Configuration & Connecting to PostgreSQL](/getting-started/setup/configuration-setup)
+
+---
+
+## Step 1: Verify Database Connection
+
+Confirm that go-pg can establish a connection to your PostgreSQL server.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"github.com/go-pg/pg/v10"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Initialize Options with your DB credentials
+	opts := &pg.Options{
+		Addr:     "localhost:5432",
+		User:     "postgres",
+		Password: "",
+		Database: "example",
+	}
+
+	db := pg.Connect(opts)
+	defer db.Close()
+
+	// Run a simple ping query to verify connection
+	var n int
+	err := db.WithContext(ctx).QueryOne(pg.Scan(&n), "SELECT 1")
+	if err != nil {
+		panic(fmt.Sprintf("Failed to connect or query database: %s", err))
+	}
+
+	fmt.Println("Database connection verified successfully.")
+}
+```
+
+**Expected Outcome:**
+
+- Program runs without panic.
+- Prints `Database connection verified successfully.`
+
+<Tip>
+If you encounter connection errors, verify your PostgreSQL server is running, network connectivity, credentials, and that the database exists.
+</Tip>
+
+---
+
+## Step 2: Test Basic CRUD Operations
+
+Once connectivity is confirmed, validate your ORM setup by performing simple insert, select, update, and delete operations.
+
+### Define Your Model Struct
+
+```go
+package main
+
+import "github.com/go-pg/pg/v10/orm"
+
+type User struct {
+	ID    int64  `pg:",pk"`
+	Name  string
+	Email string
+}
+```
+
+### Perform CRUD Operations
+
+```go
+func performCRUD(db *pg.DB) error {
+	ctx := context.Background()
+
+	// Create table
+	err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{
+		IfNotExists: true,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Insert a user
+	user := &User{Name: "Alice", Email: "alice@example.com"}
+	_, err = db.Model(user).Context(ctx).Insert()
+	if err != nil {
+		return err
+	}
+
+	// Select the inserted user by ID
+	fetchedUser := &User{ID: user.ID}
+	err = db.Model(fetchedUser).Context(ctx).WherePK().Select()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Fetched User: %+v\n", fetchedUser)
+
+	// Update user email
+	fetchedUser.Email = "alice_new@example.com"
+	_, err = db.Model(fetchedUser).Context(ctx).WherePK().Update()
+	if err != nil {
+		return err
+	}
+
+	// Delete the user
+	_, err = db.Model(fetchedUser).Context(ctx).WherePK().Delete()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+```
+
+### Integrate with Main Function
+
+```go
+func main() {
+	opts := &pg.Options{
+		Addr:     "localhost:5432",
+		User:     "postgres",
+		Database: "example",
+	}
+	db := pg.Connect(opts)
+	defer db.Close()
+
+	err := performCRUD(db)
+	if err != nil {
+		panic(fmt.Sprintf("CRUD operation failed: %s", err))
+	}
+
+	fmt.Println("CRUD operations completed successfully.")
+}
+```
+
+**Expected Outcome:**
+
+- Table `user` is created if it doesn't exist.
+- User record is inserted and selected correctly.
+- Update successfully changes data.
+- Delete removes the record.
+- Console outputs confirm fetched data and successful completion.
+
+<Warning>
+Ensure your PostgreSQL user has sufficient permissions to create tables and modify data.
+</Warning>
+
+---
+
+## Step 3: Validate Query Output and Behavior
+
+Examine your console output to confirm:
+
+- The inserted user appears with correct values.
+- No errors during update or delete.
+
+This real feedback loop confirms that your environment is ready to execute database operations with go-pg's ORM.
+
+---
+
+## Troubleshooting Common Issues
+
+<AccordionGroup title="Troubleshooting Validation Steps">  
+<Accordion title="Connection Errors">  
+- Check that PostgreSQL server is running and reachable at the specified address and port.
+- Verify firewall or network settings aren’t blocking connections.
+- Confirm credentials (user, password) are correct.
+- Verify that the database exists.
+</Accordion>  
+<Accordion title="Permission Denied on Table Creation or DML">  
+- Confirm your PostgreSQL user has privileges to create tables and modify data.
+- Consider connecting as an admin user or adjusting permissions.
+</Accordion>  
+<Accordion title="Model Mapping or Struct Issues">  
+- Ensure primary key tags (e.g., `pg:",pk"`) are set on at least one field.
+- Make sure struct field types match database columns.
+- Use `CreateTable` with `IfNotExists` to avoid conflicts.
+</Accordion>  
+<Accordion title="Silent Failures or No Output">  
+- Add explicit error handling to capture issues.
+- Use Go race detector and verbose testing to uncover hidden issues.
+</Accordion>  
+</AccordionGroup>
+
+---
+
+## Next Steps
+
+After successfully verifying your setup, you are ready to:
+
+- Define complex models and relationships. See [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud).
+- Explore querying features and advanced usage. See [Quickstart: Building Your First App](/guides/getting-started/quickstart-example).
+- Manage connection pooling and performance tuning.
+
+For unresolved problems, consult:
+
+- [Troubleshooting Common Setup Issues](/getting-started/first-use/troubleshooting-common-setup-issues)
+- [FAQ on Basic Connection Setup](/faq/getting-started-issues/basic-connection-setup)
+
+---
+
+## Summary
+
+Verification is a critical milestone ensuring your go-pg and PostgreSQL environment works reliably. Running simple connection tests and CRUD operations gives confidence before you proceed to build application logic.
+
+This step reduces setup friction and accelerates your development journey.
+
+---
+
+# Appendix: Full Example Code
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/go-pg/pg/v10"
+	"github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+	ID    int64  `pg:",pk"`
+	Name  string
+	Email string
+}
+
+func performCRUD(db *pg.DB) error {
+	ctx := context.Background()
+
+	// Create table if it does not exist
+	err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{
+		IfNotExists: true,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Insert a user
+	user := &User{Name: "Alice", Email: "alice@example.com"}
+	_, err = db.Model(user).Context(ctx).Insert()
+	if err != nil {
+		return err
+	}
+
+	// Select the inserted user
+	fetchedUser := &User{ID: user.ID}
+	err = db.Model(fetchedUser).Context(ctx).WherePK().Select()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Fetched User: %+v\n", fetchedUser)
+
+	// Update email
+	fetchedUser.Email = "alice_new@example.com"
+	_, err = db.Model(fetchedUser).Context(ctx).WherePK().Update()
+	if err != nil {
+		return err
+	}
+
+	// Delete the user
+	_, err = db.Model(fetchedUser).Context(ctx).WherePK().Delete()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func main() {
+	opts := &pg.Options{
+		Addr:     "localhost:5432",
+		User:     "postgres",
+		Password: "",
+		Database: "example",
+	}
+	db := pg.Connect(opts)
+	defer db.Close()
+
+	// Verify connection
+	var n int
+	err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+	if err != nil {
+		panic(fmt.Sprintf("Failed to connect or query database: %s", err))
+	}
+	fmt.Println("Database connection verified successfully.")
+
+	// Run CRUD tests
+	err = performCRUD(db)
+	if err != nil {
+		panic(fmt.Sprintf("CRUD operation failed: %s", err))
+	}
+	fmt.Println("CRUD operations completed successfully.")
+}
+```
+
+This full example validates your environment from connection through model CRUD lifecycle.
+
+---
+
+For more complex validation scenarios and troubleshooting, consult the related guides in this documentation suite.
+
+---
