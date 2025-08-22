@@ -1,0 +1,225 @@
+---
+title: "Upgrade Guides"
+description: "Step-by-step upgrade instructions for moving between major and minor versions, including code, configuration, and dependency changes. Contains troubleshooting advice and references to known migration pain points."
+---
+
+# Upgrade Guides
+
+Navigate your migration journey with confidence using these detailed, step-by-step instructions for upgrading your go-pg library between major and minor versions. Whether you are adopting new features, applying important fixes, or modifying configurations and dependencies, this guide ensures a seamless and informed transition.
+
+---
+
+## 1. Understanding Upgrade Context
+
+Upgrading go-pg is about maintaining compatibility and leveraging improvements while minimizing disruptions to your existing applications. This page focuses exclusively on version upgrades — providing practical guidance on:
+
+- Code changes: adjustments to API usage, deprecations, and new idioms.
+- Configuration updates: necessary updates to connection options, import paths, and dependencies.
+- Dependency management: ensuring module versions and import paths align correctly with upgrades.
+- Troubleshooting: anticipatory advice based on common pain points encountered during migrations.
+
+By following these instructions, you will confidently maintain your PostgreSQL integration with go-pg while adopting improvements and avoiding pitfalls.
+
+---
+
+## 2. Preparing for the Upgrade
+
+Before you start, ensure the following prerequisites to avoid common issues:
+
+- **Confirm Go version**: go-pg requires Go 1.16 or higher due to module support.
+- **Check PostgreSQL compatibility**: Ensure your PostgreSQL server version meets go-pg compatibility requirements (usually 9.6+).
+- **Module initialization with Go Modules**: Upgrades depend on proper Go module setup.
+- **Backup your codebase and database**: Always create backups before starting migration.
+
+<Tip>
+Verifying these prerequisites early saves significant debugging time later. Consult the [Prerequisites & System Requirements](/getting-started/setup-installation/prerequisites) page for detailed system checks.
+</Tip>
+
+---
+
+## 3. Upgrade Steps for Major Versions
+
+Major version upgrades (e.g., from v9 to v10) often introduce breaking changes. Here's a clear workflow to follow:
+
+### Step 1: Update Import Paths
+
+Since go-pg follows semantic versioning conventions, the major version must appear explicitly in your import paths. For example, upgrading to v10 requires:
+
+```go
+import "github.com/go-pg/pg/v10"
+```
+
+Neglecting the `/v10` suffix is a widespread source of import errors.
+
+### Step 2: Modify Go Module Requirements
+
+Update your `go.mod` file:
+
+```shell
+go get github.com/go-pg/pg/v10
+```
+
+Then run:
+
+```shell
+go mod tidy
+```
+
+to ensure dependency trees are correctly aligned.
+
+### Step 3: Adjust Code for Breaking API Changes
+
+Review the [Breaking Changes](/changelog/change-details/breaking-changes) documentation for detailed lists of altered methods, deprecated APIs, or behavioral changes. Common adjustments include:
+
+- Revised method signatures for query building and transaction management.
+- Changes in default behaviors (e.g., zero-value handling or connection pooling defaults).
+- Updates in advanced features like prepared statements or notifications.
+
+Use the provided migration guides and code samples to revise your application accordingly.
+
+### Step 4: Update Configuration Options
+
+- Review connection option structs and ensure your usage aligns with new configuration patterns.
+- Verify timeout, pool size, and retry settings according to the updated pool management behavior.
+
+### Step 5: Test Thoroughly
+
+Run your full test suite with race detection enabled:
+
+```shell
+go test ./... -race
+```
+
+Also perform integration tests against your PostgreSQL instance to catch any subtle regression.
+
+<Tip>
+Leverage the go-pg debug hooks and observability features during testing to trace query execution and catch unexpected behavior early.
+</Tip>
+
+---
+
+## 4. Upgrade Steps for Minor and Patch Versions
+
+Minor and patch upgrades mostly contain backward-compatible improvements and bug fixes. The process is simpler:
+
+- Update the version in your `go.mod` (e.g., from v10.2.1 to v10.3.0) using `go get`.
+- Run `go mod tidy` to synchronize dependencies.
+- Verify your import paths include the correct major version suffix.
+- Execute your automated tests to confirm no regressions.
+
+These upgrades rarely require code changes but stay attentive to patch notes for any behavioral nuances.
+
+---
+
+## 5. Common Migration Pitfalls and Troubleshooting
+
+### Problem: Missing Major Version in Import Path
+
+**Symptom:** Import errors or module version conflicts.
+
+**Solution:** Confirm your import paths explicitly include `/v10` (or the correct major version).
+
+### Problem: Deprecated API Usage
+
+**Symptom:** Compilation errors referencing removed or deprecated functions.
+
+**Solution:** Consult the breaking changes documentation for replacements or alternatives and refactor accordingly.
+
+### Problem: Connection Errors After Upgrade
+
+**Symptom:** Timeouts, authentication failures, or unexpected disconnections.
+
+**Solution:** Check updated defaults in the connection options, validate your PostgreSQL configuration, and confirm pooling parameters. Reference the [Connection Errors Troubleshooting](/getting-started/troubleshooting/connection-errors) guide.
+
+### Problem: Unexpected Query Behavior
+
+**Symptom:** Changes in query results, errors during bulk operations, or transaction handling anomalies.
+
+**Solution:** Review transaction and prepared statement behavior changes. Utilize observability hooks for tracing queries as documented on the [Observability and Instrumentation](/concepts/extensibility-and-integration/observability-and-instrumentation) page.
+
+---
+
+## 6. Example: Upgrading from go-pg v9 to v10
+
+```go
+// Old import
+import "github.com/go-pg/pg"
+
+// New import with major version suffix
+import "github.com/go-pg/pg/v10"
+
+// Update package import versions in go.mod
+// Run: go get github.com/go-pg/pg/v10
+
+// Revisit connection initialization
+db := pg.Connect(&pg.Options{
+    User: "postgres",
+    // verify other options as per v10 docs
+})
+
+// Refactor transactions, if needed, as per new API signatures
+// See https://pg.uptrace.dev/changelog/change-details/breaking-changes
+
+// Run tests and fix any compile-time or runtime issues
+```
+
+---
+
+## 7. Additional Resources and References
+
+To maximize upgrade success, be sure to consult the following complementary pages:
+
+- [Breaking Changes](/changelog/change-details/breaking-changes): Detailed list of breaking API changes and migration strategies.
+- [Deprecations & Removals](/changelog/change-details/deprecations-removed): Guidance on phased feature removals.
+- [Connection Setup and Pooling](/api-reference/core-orm-database/client-connection): For configuring new connection options post-upgrade.
+- [Transaction Management](/guides/real-world-integration-patterns/transaction-management): Best practices aligned with the latest version.
+- [Observability & Debugging](/guides/real-world-integration-patterns/observability-debugging): Utilize hooks for tracing and diagnostics during migration.
+
+---
+
+## 8. Summary
+
+Upgrade Guides for go-pg serve as your essential roadmap through major and minor version transitions, focusing on practical code updates, configuration realignments, and troubleshooting to maintain robust PostgreSQL integrations. Embrace the detailed steps here in conjunction with extensive references to accomplish smooth migrations, safeguard your applications, and harness the full power of go-pg improvements.
+
+---
+
+## Appendix: Troubleshooting Tips
+
+<AccordionGroup title="Common Upgrade Troubleshooting Scenarios">
+<Accordion title="Import Path Errors">
+Check that your import paths have the correct major version suffix (e.g., `/v10`). Failure to do so results in unresolved packages or version mismatches.
+</Accordion>
+<Accordion title="API Incompatibilities">
+After upgrading, if you encounter compilation errors, carefully review breaking changes documentation and update your code to use the new API methods or signatures.
+</Accordion>
+<Accordion title="Connection Failures">
+Update connection configuration options as some defaults may have changed. Validate PostgreSQL server settings and credentials.
+</Accordion>
+<Accordion title="Query Failures or Unexpected Behavior">
+Enable debug hooks and tracing to inspect SQL queries issued by your application; verify they comply with new behaviors introduced in the upgrade.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Appendix: Recommended Upgrade Workflow Checklist
+
+1. **Backup everything** — code, dependencies, and database.
+2. **Read release notes and breaking changes first.**
+3. **Update import paths and dependencies in go.mod.**
+4. **Adjust application code for new APIs.**
+5. **Update connection and pool configurations per new defaults.**
+6. **Run tests exhaustively** including integration and race detection.
+7. **Use observability tools** to confirm functionality at runtime.
+8. **Deploy to staging** and monitor carefully before production rollout.
+
+---
+
+### Get Help
+If you encounter issues not covered here, consult:
+
+- The [Community Chat](https://discord.gg/rWtp5Aj) for peer support.
+- The [go-pg GitHub repository](https://github.com/go-pg/pg) issue tracker for known issues.
+- Related guides and troubleshooting documentation linked throughout this page.
+
+Your smooth upgrade is our priority—follow these guides to ensure success.
