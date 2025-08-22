@@ -1,0 +1,170 @@
+---
+title: "Breaking Changes"
+description: "Explicitly lists any breaking changes introduced in each version, with side-by-side before/after examples where possible. Highlights required action for users and provides reasoning to support migration planning."
+---
+
+# Breaking Changes
+
+This page explicitly catalogs all breaking changes introduced across go-pg versions, spotlighting critical user-impact modifications that potentially disrupt existing applications. Each entry includes clear before-and-after examples where applicable, accompanied by straightforward explanations and recommended user actions to ease migration and maintain application stability.
+
+---
+
+## Understanding Breaking Changes
+
+Breaking changes refer to alterations that require you to modify your existing code or workflows to maintain compatibility with new go-pg releases. These changes may affect APIs, behavior, configuration, or results returned by go-pg functions.
+
+By carefully reviewing this page when upgrading, you can proactively plan the necessary code adaptations and avoid unexpected disruptions.
+
+---
+
+## How to Use This Page
+
+1. **Identify your current go-pg version.**
+2. **Locate the entries for versions newer than yours.**
+3. **Examine each breaking change impacting your usage patterns or APIs you rely on.**
+4. **Follow the recommended migration steps provided.**
+
+This page is designed to provide concrete examples to clarify how changes manifest and what you must do to adapt successfully.
+
+---
+
+## Recent Breaking Changes
+
+### Version v10.0.0 (Initial v10 Release)
+
+- **Import Path Update**
+  - *Before:* 
+    ```go
+    import "github.com/go-pg/pg"
+    ```
+  - *After:*
+    ```go
+    import "github.com/go-pg/pg/v10"
+    ```
+  - **Action Required:** Update all go-pg imports to include the `/v10` suffix to avoid version mismatch errors.
+
+- **Connection Options Refactored**
+  - *Before:* Connection options had looser defaults and lacked some explicit fields.
+  - *After:* Enhanced connection option validations and explicit field naming require updating your connection setup code.
+  - **Example:**
+    ```go
+    // Before
+    db := pg.Connect(&pg.Options{
+      User: "postgres",
+    })
+
+    // After - taking advantage of additional option fields where needed
+    db := pg.Connect(&pg.Options{
+      User:     "postgres",
+      Addr:     "localhost:5432",
+      Password: "mypassword",
+      Database: "mydb",
+    })
+    ```
+  - **Action Required:** Review your connection initialization and provide explicit options as needed.
+
+- **Error Handling Changes**
+  - Error types and checking methods have been updated for clearer semantics.
+  - **Action Required:** Review and adjust your error type assertions and comparisons according to the new error interfaces documented in the [Error Handling & Status Codes](https://pg.uptrace.dev/api-reference/common-operations-examples/error-handling-status-codes) page.
+
+- **Migration to Contextual Logging**
+  - APIs that use logging now optionally accept `context.Context` for improved traceability.
+  - **Action Required:** Update logging calls to include context when applicable.
+
+- **Removal of Deprecated APIs**
+  - Deprecated functions and methods from previous versions are no longer available.
+  - **Action Required:** Replace deprecated usages with current recommended APIs listed in the release notes and migration guides.
+
+### Previous Versions
+
+For breaking changes prior to v10, refer to the specific version migration guides or changelog entries in the [Changelog: Release Notes](https://pg.uptrace.dev/changelog/release-history/release-notes).
+
+---
+
+## Common Migration Scenarios
+
+### Updating Import Paths
+
+Many users upgrading from v9 to v10 face immediate import errors because v10 mandates the version suffix in import paths. Update all `import` statements in your project:
+
+```go
+// Incorrect
+import "github.com/go-pg/pg"
+
+// Correct
+import "github.com/go-pg/pg/v10"
+```
+
+### Handling Connection Option Changes
+
+Connection options are more explicit in v10. Always specify critical parameters to avoid connection failures or unexpected behavior:
+
+```go
+db := pg.Connect(&pg.Options{
+  User:     "postgres",
+  Password: "",
+  Addr:     "localhost:5432",
+  Database: "mydb",
+})
+```
+
+Neglecting required fields may lead to connection errors or usage of unintended defaults.
+
+### Adaptation to New Error Interfaces
+
+go-pg's improved error handling enables finer classification and recovery. When your code inspects or switches on error types, update checks to use the new interfaces and helper functions:
+
+```go
+import "github.com/go-pg/pg/v10"
+
+if err != nil {
+  if pg.IsErrNoRows(err) {
+    // Handle no rows returned
+  } else {
+    // Handle other errors
+  }
+}
+```
+
+---
+
+## Tips for Smooth Migration
+
+- Always read the full release notes linked in the [Changelog Overview](https://pg.uptrace.dev/changelog/release-history/version-overview) to understand the context of changes.
+- Test your application in a staging environment with the new go-pg version before deploying.
+- Use the provided before/after examples as a guide for code adaptation.
+- Consult related documentation pages such as [Connection Setup](https://pg.uptrace.dev/getting-started/basic-usage/initial-connection) and [Error Handling](https://pg.uptrace.dev/api-reference/common-operations-examples/error-handling-status-codes).
+
+---
+
+## Troubleshooting Migration Issues
+
+If you encounter common problems after upgrading:
+
+- **Compilation errors on import:** Verify all go-pg imports use `/v10` suffix.
+- **Connection failures:** Double-check your connection option configurations and ensure all necessary fields are provided.
+- **Unhandled error types:** Replace deprecated error handling with new error checking functions.
+- **Deprecated API usage:** Search your codebase for deprecated function calls and consult the migration guides for replacements.
+
+For detailed troubleshooting workflows, see the [Connection Errors Guide](https://pg.uptrace.dev/getting-started/troubleshooting/connection-errors).
+
+---
+
+## Additional Resources
+
+- [Upgrade Guides](https://pg.uptrace.dev/changelog/change-details/upgrade-guides) - Step-by-step instructions for version-to-version upgrades.
+- [Release Notes](https://pg.uptrace.dev/changelog/release-history/release-notes) - Comprehensive changelogs for all releases.
+- [API Reference](https://pkg.go.dev/github.com/go-pg/pg/v10) - Current methods and types.
+- [Getting Started: Initial Connection](https://pg.uptrace.dev/getting-started/basic-usage/initial-connection) - Connection configuration details.
+
+---
+
+By referring to this page before upgrading, you gain clear visibility into necessary code changes and ensure your use of go-pg remains stable and performant as you move forward.
+
+
+---
+
+_Last updated: Version v10_
+
+
+---
