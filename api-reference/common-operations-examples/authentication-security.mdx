@@ -1,0 +1,313 @@
+---
+title: "Authentication and Security Patterns"
+description: "Covers connection-level authentication, securing credentials, and recommended options for sensitive environments. Provides safe patterns to avoid common misconfigurations."
+---
+
+# Authentication and Security Patterns
+
+Secure and reliable access to your PostgreSQL database is critical when using go-pg. This page focuses exclusively on connection-level authentication, securing credentials, and recommended configuration patterns to protect sensitive information and avoid common pitfalls.
+
+---
+
+## Overview
+
+This documentation guides you step-by-step to establish secure authentication for your go-pg PostgreSQL connections. It covers supported authentication mechanisms, safe credential handling, TLS configuration, and options to harden your connection settings.
+
+You will learn best practices for:
+- Configuring user credentials safely
+- Choosing and enforcing TLS
+- Managing connection secrets securely
+- Avoiding common misconfigurations that lead to vulnerabilities or connection failures
+
+---
+
+## 1. Connection Authentication Types Supported
+
+### Supported Authentication Methods
+
+go-pg supports all PostgreSQL authentication methods typically encountered, including:
+
+- **Password authentication:** Cleartext, MD5-hashed password
+- **SASL (SCRAM-SHA-256):** A modern and secure challenge-response mechanism
+
+Under the hood, go-pg negotiates authentication during the connection startup using the PostgreSQL wire protocol. If the server requests password authentication, go-pg responds according to the required method (e.g., MD5 hash or cleartext).
+
+### SASL Authentication (SCRAM-SHA-256)
+
+SASL is the most secure method supported by PostgreSQL and is fully implemented in go-pg. It uses the SCRAM-SHA-256 mechanism:
+- Password credentials are never sent in cleartext over the network
+- Challenge-response exchanges prevent replay attacks
+
+Ensure your PostgreSQL server is configured to support SASL to use this method.
+
+
+<CodeGroup>
+```go
+// Example: Using go-pg with SASL authentication requires only usual Password config.
+// The driver negotiates SASL automatically.
+import (
+	"github.com/go-pg/pg/v10"
+)
+
+db := pg.Connect(&pg.Options{
+	User:     "dbuser",
+	Password: "secure-password",
+	Database: "mydb",
+})
+// no further setup needed for SASL
+```
+</CodeGroup>
+
+---
+
+## 2. Safely Handling Credentials
+
+### Avoid Hardcoding Secrets
+
+Never hardcode passwords or sensitive credentials directly in your source code. Instead:
+
+- Use environment variables (`PGUSER`, `PGPASSWORD`, `PGDATABASE`, etc.) to inject credentials
+- Leverage external secrets managers or encrypted configuration files
+
+### Example: Using Environment Variables
+
+```go
+import (
+	"os"
+	"github.com/go-pg/pg/v10"
+)
+
+func connect() *pg.DB {
+	options := &pg.Options{
+		User:     os.Getenv("PGUSER"),
+		Password: os.Getenv("PGPASSWORD"),
+		Database: os.Getenv("PGDATABASE"),
+	}
+	return pg.Connect(options)
+}
+```
+
+### Using Connection URLs
+
+You can also specify a PostgreSQL connection URL with credentials safely passed via environment variables:
+
+```go
+url := os.Getenv("DATABASE_URL")
+options, err := pg.ParseURL(url)
+if err != nil {
+	panic(err)
+}
+db := pg.Connect(options)
+```
+
+Ensure the environment variable containing the URL is properly protected.
+
+---
+
+## 3. TLS / SSL Configuration for Secure Connections
+
+Encrypting your connection to PostgreSQL protects against network eavesdropping and man-in-the-middle attacks.
+
+### Enabling TLS
+
+Set up `TLSConfig` in your `pg.Options` to enable TLS:
+
+```go
+import "crypto/tls"
+
+db := pg.Connect(&pg.Options{
+	User:     "user",
+	Password: "password",
+	Database: "db",
+	TLSConfig: &tls.Config{
+		InsecureSkipVerify: false, // ensure true certificate verification
+	},
+})
+```
+
+### `sslmode` Option
+
+go-pg also respects the `sslmode` query option in URLs, supporting:
+
+- `disable` – no encryption
+- `allow`, `prefer` – opportunistic encryption without cert validation
+- `require` – encryption without validation
+- `verify-ca`, `verify-full` – full certificate verification
+
+For security, always use `verify-full` if certificates are available.
+
+### Best Practices
+
+- Avoid `InsecureSkipVerify: true` in production.
+- Use custom CA certificates if your database uses self-signed certs.
+- Confirm PostgreSQL server TLS settings enable encrypted connections.
+
+---
+
+## 4. Configuration Options & Patterns
+
+### Using `pg.Options` Securely
+
+The key fields related to security and authentication are:
+
+| Field               | Description                           | Security Notes                      |
+|---------------------|-----------------------------------|-----------------------------------|
+| `User`              | PostgreSQL username                 | Never hardcode; use env variables |
+| `Password`          | Password or credential              | Protect securely; use secrets managers |
+| `TLSConfig`         | TLS settings                       | Use strict certificate validation |
+| `ApplicationName`   | Optional app identifier             | No security impact but helpful for logging |
+
+### Example Secure Options
+
+```go
+import "crypto/tls"
+
+options := &pg.Options{
+	User:     os.Getenv("PGUSER"),
+	Password: os.Getenv("PGPASSWORD"),
+	Database: os.Getenv("PGDATABASE"),
+	TLSConfig: &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		// Set InsecureSkipVerify to false to enforce cert checks
+		InsecureSkipVerify: false,
+	},
+	ApplicationName: "MySecureApp",
+}
+```
+
+### Parsing URL with SSL parameter
+
+```go
+options, err := pg.ParseURL("postgres://user:pass@host:5432/db?sslmode=verify-full")
+if err != nil {
+	panic(err)
+}
+db := pg.Connect(options)
+```
+
+---
+
+## 5. Common Pitfalls & How to Avoid Them
+
+<AccordionGroup title="Authentication & Security Best Practices">
+<Accordion title="Issue: Plaintext Password Transmission">
+Without TLS configured properly, passwords—even when hashed—may be exposed on the network.
+
+- Always enable TLS with `verify-ca` or `verify-full` mode.
+- Avoid `InsecureSkipVerify: true` in production.
+</Accordion>
+<Accordion title="Issue: Hardcoded Credentials in Source Code">
+Hardcoding credentials risks exposure if code repositories are accessed by unauthorized parties.
+
+- Use environment variables or secret management tools.
+- Rotate passwords periodically.
+</Accordion>
+<Accordion title="Issue: Misconfigured `sslmode` Setting">
+Using `sslmode=disable` or `allow` can inadvertently allow unencrypted connections.
+
+- Explicitly require encrypted connections in production.
+- Validate SSL certificates.
+</Accordion>
+<Accordion title="Issue: Unsupported or Misused Authentication Methods">
+Older PostgreSQL auth methods may be less secure or no longer supported.
+
+- Prefer SASL/SCRAM-SHA-256 where possible.
+- Ensure go-pg version is up to date.
+</Accordion>
+<Accordion title="Issue: Untrusted Certificates or No Certificate Validation">
+Setting `InsecureSkipVerify: true` allows connections even with untrusted servers.
+
+- Use correct CA certs for self-signed servers.
+- Avoid skipping verification in production environments.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## 6. Troubleshooting Authentication Issues
+
+When connection failures occur related to authentication or security, consider:
+
+- Verifying PostgreSQL server logs for authentication rejection reasons
+- Checking that password and username are correct and user exists
+- Confirming the PostgreSQL server supports the authentication method configured
+- Ensuring network connectivity and firewall rules allow TLS connections
+- Validating TLS certificates and hostname matches
+- Confirming environment variables and config files are loaded correctly
+
+If you encounter SASL errors:
+
+- Check PostgreSQL is configured with `scram-sha-256` passwords
+- Ensure go-pg version supports SASL (v10 and later)
+
+---
+
+## 7. Summary & Next Steps
+
+By following the authentication and security patterns outlined here, you will:
+- Securely authenticate your go-pg clients against PostgreSQL
+- Protect connection credentials in your deployment
+- Enable encrypted communication to safeguard data in transit
+- Avoid frequent security pitfalls that cause connection issues
+
+For advanced security considerations and integration:
+- Explore [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling)
+- Learn about [Transactions and Prepared Statements](/api-reference/core-orm-database/transactions-prepared)
+- Reference [Error Handling & Status Codes](/api-reference/common-operations-examples/error-handling-status-codes) for troubleshooting
+
+---
+
+## Additional Resources
+
+- Official PostgreSQL authentication documentation: https://www.postgresql.org/docs/current/auth-methods.html
+- Go `crypto/tls` package docs: https://pkg.go.dev/crypto/tls
+- Environment Variable Configuration: https://pg.uptrace.dev/connection.html#environment-variables
+
+---
+
+<Check>
+Secure your database connections by always using encrypted channels and external secrets storage. Keep go-pg updated to leverage the latest authentication features and fixes.
+</Check>
+
+---
+
+## Example: Secure Connection Setup
+
+```go
+package main
+
+import (
+	"crypto/tls"
+	"log"
+
+	"github.com/go-pg/pg/v10"
+)
+
+func main() {
+	options := &pg.Options{
+		User:     "postgres",
+		Password: "secret",
+		Database: "example",
+		TLSConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: false, // Always verify certs
+		},
+		ApplicationName: "SecureApp",
+	}
+
+	db := pg.Connect(options)
+	defer db.Close()
+
+	var n int
+	err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+
+	log.Println("Connection successful")
+}
+```
+
+This minimal example connects with enforced TLS and prints a success message if authentication and connection succeed.
+
+---
