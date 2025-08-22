@@ -1,0 +1,175 @@
+---
+title: "What's New"
+description: "Detailed release notes highlighting notable new functionality, major improvements, and key changes introduced in recent versions. Users can quickly see how go-pg is evolving and identify value in the latest updates."
+---
+
+# What's New in go-pg
+
+Discover the latest improvements and notable changes in go-pg, the high-performance PostgreSQL client and ORM for Go. This document highlights key new features, enhancements, and important updates introduced in recent versions, enabling you to quickly understand how go-pg is evolving and how these changes can add value to your projects.
+
+---
+
+## Recent Releases Overview
+
+### Version Highlights
+- **Enhanced Bulk Update Support**: Improved handling of bulk/batch updates allowing updates on slices of models, with options to omit zero values for SQL `NULL` compatibility. This upgrade reduces roundtrips and improves throughput when performing large updates.
+- **Advanced Update Query Customization**: New support for setting arbitrary values with custom SQL expressions on update queries, allowing complex update operations directly via ORM syntax.
+- **Improved Relation Loading**: Enhanced ORM relations handling supports nested relationships (`has-one`, `belongs-to`, `has-many`, `many-to-many`) with more efficient queries and simplified usage.
+- **Expanded Support for PostgreSQL Types**: Continued improvements in mapping complex types including arrays, JSONB, hstore, and composite types with clearer struct annotations and better scanning abilities.
+- **Temporary Table Creation from Models**: The ability to create temporary tables quickly from Go structs with `CreateTable` API has been polished for development and testing workflows.
+- **Enhanced Transaction Management**: Added clearer idiomatic patterns and examples around starting, committing, rolling back, and nested transaction use using both explicit calls and `RunInTransaction` helpers.
+- **Connection Pooling Stability & Metrics**: Internals enhanced to handle stale connections, dial errors, and basic circuit breaker patterns improving reliability in heavy workloads and long-running applications.
+- **More Comprehensive Error Handling**: Introduced better typed errors for Postgres-specific errors, with example patterns to detect constraint violations and other common failure modes.
+
+### Bug Fixes and Patches
+- Fixed issues around bulk update empty slices returning errors gracefully.
+- Resolved scanning problems with nullable timestamps (`pg.NullTime`, `sql.NullTime`) in batch updates.
+- Improved detection and gracefully handling zero/empty values during updates and inserts, aligning ORM defaults with PostgreSQL expectations.
+
+### Deprecations and Maintenance Mode
+- go-pg v10 is currently in maintenance mode; critical bug fixes are addressed but no new features are planned. Users are encouraged to explore the successor project [Bun](https://bun.uptrace.dev/guide/pg-migration.html) for active development supporting a wider range of databases.
+
+---
+
+## Detailed Changes and User Impact
+
+### Bulk Update Enhancements
+Bulk updates now support:
+- Updating slices of structs with automatic matching by primary key.
+- Omitting zero/empty values to preserve existing database values (using SQL `COALESCE`).
+- Overriding individual columns in batch updates with custom values.
+
+**Why this matters:** This allows significant performance gains by reducing per-record update statements and ensures that your existing column values won’t be unintentionally overwritten by zero values.
+
+### Advanced Update Query Features
+You can now supply raw SQL expressions for column updates within the ORM's `Value` method:
+
+```go
+q := NewQuery(nil, model).Value("column_name", "upper(?)", value).WherePK()
+```
+
+This opens doors to precise control and complex update logic without leaving the ORM.
+
+### Relation Loading Improvements
+Nested relation loading supports loading deeply nested associated data with syntax like:
+
+```go
+err := db.Model(&parent).
+  Relation("Children.GrandChildren.GreatGrandChildren").
+  Select()
+```
+
+This improves developer productivity by seamlessly loading complex data structures in a clean, declarative way.
+
+### PostgreSQL Type and Composite Support
+Mapping of complex types is more robust:
+- Multi-dimensional arrays with the `pg:",array"` tag.
+- JSONB and hstore columns utilize Go native types and wrappers.
+- Composite types can be defined as nested Go structs with ORM support for inserts and queries.
+
+Practical examples illustrate these capabilities to accelerate implementation without manual SQL.
+
+### Schema Migration and Table Creation
+Model-driven schema creation has been streamlined with options like temporary table creation and foreign key constraints.
+
+**Example:**
+```go
+err := db.Model(&YourModel{}).CreateTable(&orm.CreateTableOptions{
+    Temp: true, // creates temporary table
+    FKConstraints: true,
+})
+```
+
+Ideal for testing setups or ephemeral data storage.
+
+### Transaction Management
+New patterns and examples demonstrate simple, safe transaction usage with automatic rollback on errors via `RunInTransaction`, reducing boilerplate and potential data integrity errors.
+
+### Connection Pool and Reliability
+Under the hood improvements in connection pooling ensure hits to stale connections or network glitches are handled gracefully, improving long-term reliability. Key metrics exposure helps monitor pool health.
+
+### Error Handling Enhancements
+Better error type recognition helps you:
+- Detect unique constraint violations.
+- Differentiate fatal errors such as `PANIC` from recoverable ones.
+- Implement clearer retry or fallback logic based on error kinds.
+
+**Example error handling:**
+```go
+if pgErr, ok := err.(pg.Error); ok {
+  if pgErr.IntegrityViolation() {
+    // handle duplicate key
+  }
+}
+```
+
+---
+
+## Practical Upgrade Tips
+
+- Verify bulk update queries carefully match your expected usage to prevent unintended data loss, especially when using `omitZero` options.
+- Utilize new SQL expression capabilities in updates to simplify complex in-place modifications.
+- Leverage nested relation loading to optimize query counts and retrieved data.
+- For development convenience, use temporary table creation improvements.
+- Monitor connection pools with provided metrics and tune pool sizes accordingly.
+- Adopt the improved error handling models to build robust, resilient database interactions.
+
+---
+
+## Useful Code Samples
+
+### Bulk Update Example
+```go
+users := []*User{{Id: 1, Name: "Alice"}, {Id: 2, Name: "Bob"}}
+_, err := db.Model(&users).WherePK().Update()
+```
+
+### Update With Expression
+```go
+q := db.Model(&user).Value("name", "upper(?)", user.Name).WherePK()
+_, err := q.Update()
+```
+
+### Load Nested Relations
+```go
+post := &Post{Id: 1}
+err := db.Model(post).
+  Relation("Author").
+  Relation("Comments.User").
+  Select()
+```
+
+### Create Temporary Table
+```go
+err := db.Model(&User{}).CreateTable(&orm.CreateTableOptions{
+  Temp: true,
+})
+```
+
+---
+
+## Troubleshooting Common Issues
+
+- **Empty Bulk Update Slice:** Bulk update with an empty slice returns a clear error; always ensure your slice is non-empty before bulk operations.
+- **Zero Value Fields Overwrite:** Use `omitZero: true` to prevent zero-values from setting columns to NULL unintentionally.
+- **Relation Loading Errors:** Confirm relation names correctly match struct tag definitions and follow capitalization.
+- **Transaction Deadlocks:** Use `RunInTransaction` and limit transaction duration to avoid concurrency conflicts.
+
+---
+
+## Additional Resources and Next Steps
+
+- [Defining Models and Basic CRUD](https://pg.uptrace.dev/guides/getting-started/define-models-crud)
+- [Advanced Queries and Model Relationships](https://pg.uptrace.dev/guides/working-with-data/advanced-queries-relations)
+- [Schema Migrations and Table Creation](https://pg.uptrace.dev/api-reference/orm-model-workflows/schema-migrations-and-table-creation)
+- [Managing Transactions](https://pg.uptrace.dev/guides/application-patterns/transactions)
+- [Connection Pooling and Reliability](https://pg.uptrace.dev/guides/performance-best-practices/connection-pooling)
+
+For future-proofing your projects, consider evaluating [Bun](https://bun.uptrace.dev/guide/pg-migration.html) as the successor to go-pg with broader database support and more active development.
+
+
+---
+
+_Last updated: current stable version_
+
+---
