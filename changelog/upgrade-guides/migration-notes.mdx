@@ -1,0 +1,253 @@
+---
+title: "Migration Notes & Upgrade Steps"
+description: "Practical, step-by-step guidance to assist users in upgrading from previous versions, including code migration examples, configuration changes, and recommended testing procedures. This content is vital for reducing upgrade risk."
+---
+
+# Migration Notes & Upgrade Steps
+
+This guide provides practical, step-by-step assistance for upgrading your projects from earlier versions of go-pg to the latest v10 release. It focuses exclusively on the migration process, offering actionable code samples, configuration changes, and testing recommendations designed to minimize disruptions and reduce risk.
+
+---
+
+## 1. Preparing for Upgrade
+
+Before starting the upgrade, ensure your environment meets the following:
+
+- **Go Version Compatibility:** Confirm you are using a supported Go version (latest two major releases).
+- **Dependency Management:** Use Go modules to manage `github.com/go-pg/pg/v10` explicitly with the `v10` suffix.
+- **Backup and Version Control:** Backup your code and database schemas. Use version control to track changes.
+
+<Tip>
+Always verify your setup with connection tests and basic queries before beginning any migration.
+See [Validation: Verifying Your Setup](https://pg.uptrace.dev/getting-started/first-use/validation-steps) for details.
+</Tip>
+
+---
+
+## 2. Import Path and Module Suffix
+
+Update your import statements to reference the new v10 module path explicitly:
+
+```go
+import (
+  "github.com/go-pg/pg/v10"
+  "github.com/go-pg/pg/v10/orm"
+)
+```
+
+This suffix is mandatory. Omitting it causes compilation errors.
+
+---
+
+## 3. Database Connection Setup Changes
+
+When creating your database client, use the updated `pg.Connect` with `pg.Options` structure:
+
+```go
+db := pg.Connect(&pg.Options{
+  User:     "postgres",
+  Password: "your_password",
+  Addr:     "localhost:5432",
+  Database: "mydb",
+})
+```
+
+Review connection options and adjust parameters such as pooling settings or TLS options where necessary. For complete guidance, see the [Configuration & Connecting to PostgreSQL](https://pg.uptrace.dev/getting-started/setup/configuration-setup) documentation.
+
+---
+
+## 4. Model Definitions and Table Creation
+
+The ORM now enforces stricter model-to-table mappings. Changes include:
+
+- All struct fields default to nullable unless tagged with `pg:",notnull"`.
+- Zero values map to SQL `NULL` unless `pg:",use_zero"` is specified.
+- Use exported Go struct fields only.
+
+Example of a model:
+
+```go
+type User struct {
+  Id     int64
+  Name   string `pg:",notnull"`
+  Emails []string `pg:",array"`
+}
+```
+
+Create tables with `CreateTable` method from `orm` package:
+
+```go
+err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{
+  Temp: false,
+  FKConstraints: true,
+})
+if err != nil {
+  panic(err)
+}
+```
+
+Confirm your schema creation scripts align with the new constraints and options.
+
+---
+
+## 5. Query Interface Changes
+
+The query builder and ORM interfaces have refined method signatures and behaviors:
+
+- Use `.Model(&model)` for query building.
+- Explicitly chain relation loading with `.Relation("RelationName")`.
+- Bulk operations (Insert, Update, Delete) support improved parameters.
+
+Sample workflow:
+
+```go
+var users []User
+err := db.Model(&users).
+  Relation("Emails").
+  Where("name LIKE ?", "%admin%").
+  Select()
+```
+
+For advanced queries, consult the [Query Interface Examples](https://pg.uptrace.dev/api-reference/core-db-interfaces/query-interface-examples) guide.
+
+---
+
+## 6. Handling Soft Deletes and Hooks
+
+If your earlier versions used hooks or soft deletes, note:
+
+- Use the `pg:",soft_delete"` struct tag to mark soft delete fields.
+- Hook signatures expect context parameters and consistent method names like `BeforeInsert`, `AfterSelect`, etc.
+
+Example:
+
+```go
+type User struct {
+  Id        int64
+  DeletedAt pg.NullTime `pg:",soft_delete"`
+}
+
+func (u *User) BeforeInsert(ctx context.Context) (context.Context, error) {
+  // custom logic
+  return ctx, nil
+}
+```
+
+Review your hook implementations against the [Extensibility and Hooks](https://pg.uptrace.dev/concepts/architecture-overview/extensibility-hooks) documentation. Hooks now reliably operate with contexts.
+
+---
+
+## 7. Bulk Operations and Upserts
+
+The latest go-pg demonstrates improved support for batch inserts and updates:
+
+- Bulk inserts use `.Insert()` on slices.
+- Upsert (on conflict do update) is supported via `.OnConflict(...)` method chains.
+
+Example bulk insert:
+
+```go
+users := []User{{Name: "A"}, {Name: "B"}}
+_, err := db.Model(&users).Insert()
+if err != nil {
+  panic(err)
+}
+```
+
+Example upsert:
+
+```go
+_, err := db.Model(&user).
+  OnConflict(`DO UPDATE SET name = EXCLUDED.name`).
+  Insert()
+```
+
+Review [Optimizing Queries and Batch Operations](https://pg.uptrace.dev/guides/performance-best-practices/optimizing-queries-batch) for comprehensive strategies.
+
+---
+
+## 8. Testing Recommendations
+
+After migration, rigorously test:
+
+- **Basic CRUD operations:** Verify all create, read, update, and delete workflows.
+- **Relations and Joins:** Confirm relations load as expected.
+- **Transaction Handling:** Test commit, rollback, and nested transactions.
+- **Error and Timeout Handling:** Validate proper context cancellation.
+
+Use integration tests against a real PostgreSQL instance, preferably a test database, and monitor logs for silent issues.
+
+<Tip>
+Consider using `pg.Ping(ctx)` after connection setup to catch early connectivity issues.
+</Tip>
+
+---
+
+## 9. Handling Breaking Changes
+
+See the dedicated [Breaking Changes](https://pg.uptrace.dev/changelog/upgrade-guides/breaking-changes) documentation for a catalog of backward-incompatible changes with migration instructions.
+
+Key points include:
+
+- Changes in model field tagging.
+- Modified hook signatures.
+- Adjustments in query builder behavior.
+
+Adhere closely to this guide for migration success.
+
+---
+
+## 10. Additional Resources
+
+- [Defining and Using Models](https://pg.uptrace.dev/api-reference/orm-model-workflows/defining-and-using-models) to master model structures.
+- [Schema Migrations and Table Creation](https://pg.uptrace.dev/api-reference/orm-model-workflows/schema-migrations-and-table-creation) for managing schema evolution.
+- [Connection Pooling and Reliability](https://pg.uptrace.dev/guides/performance-best-practices/connection-pooling) for optimal database connectivity.
+- [Error Handling & Status Codes](https://pg.uptrace.dev/api-reference/api-fundamentals-and-best-practices/error-handling-and-status-codes) for robust query error management.
+
+---
+
+## Summary
+Migration to go-pg v10 requires updating import paths, reviewing model definitions, embracing new ORM hooks and bulk operations, and revising queries to conform to updated API signatures. Rigorous testing and configuration updates are essential to ensure a smooth transition.
+
+Feel encouraged to leverage the rich ecosystem of guides available to build an optimized, reliable data layer.
+
+---
+
+# Appendices
+
+<AccordionGroup title="Code Migration Examples">
+<Accordion title="Basic Model Definition Change">
+```go
+type User struct {
+  Id       int64
+  Name     string `pg:",notnull"`
+  Contacts []string `pg:",array"`
+}
+```
+</Accordion>
+<Accordion title="Bulk Insert Usage">
+```go
+users := []User{{Name: "Alice"}, {Name: "Bob"}}
+_, err := db.Model(&users).Insert()
+```
+</Accordion>
+<Accordion title="Soft Delete Field Declaration">
+```go
+type User struct {
+  DeletedAt pg.NullTime `pg:",soft_delete"`
+}
+```
+</Accordion>
+</AccordionGroup>
+
+<Tip>
+Remember to validate any upstream changes that may affect your database schema or those consuming your database API.
+</Tip>
+
+---
+
+For detailed upgrade scenarios and further help, always consult the official go-pg [GitHub repository](https://github.com/go-pg/pg) and associated documentation website.
+
+---
+
+*Happy migrating and enjoy the enhanced capabilities of go-pg v10!*
