@@ -1,0 +1,305 @@
+---
+title: "Quickstart: Building Your First App"
+description: "A hands-on quickstart project using go-pg to create a small app with real data—defining models, creating tables, inserting and querying data. Demonstrates best practices in code organization, error handling, and testing."
+---
+
+# Quickstart: Building Your First App with go-pg
+
+Welcome to a hands-on quickstart guide designed to take you through building a simple Go application using the powerful go-pg ORM. This guide will help you create your first data models, generate corresponding tables, insert real data, and query it efficiently while demonstrating idiomatic coding practices, error handling, and testing tips.
+
+---
+
+## 1. Workflow Overview
+
+### What This Guide Helps You Accomplish
+This guide shows you how to:
+- Define your Go structs as database models
+- Create database schemas directly from those models
+- Insert records and manage relations
+- Run queries using go-pg's ORM to fetch data including related records
+- Handle errors gracefully
+
+### Prerequisites
+- A working PostgreSQL server accessible to your application
+- Go environment setup with module support
+- go-pg v10 installed (`github.com/go-pg/pg/v10`)
+
+### Expected Outcome
+By completing this guide, you will have a basic Go app connected to PostgreSQL using go-pg, with defined models, populated tables, and working queries including relational data fetching.
+
+### Time Estimate
+Approximately 20-30 minutes, depending on experience.
+
+### Difficulty Level
+Beginner to Intermediate
+
+---
+
+## 2. Step-by-Step Instructions
+
+<Steps>
+<Step title="Initialize Your Project and Import go-pg">
+Start by initializing a Go module and importing go-pg in your main package:
+
+```go
+import (
+	"fmt"
+
+	"github.com/go-pg/pg/v10"
+	"github.com/go-pg/pg/v10/orm"
+)
+```
+
+This sets you up to use go-pg ORM methods and schema management.
+</Step>
+
+<Step title="Define Your Data Models">
+Create your Go structs representing database tables. For example, define `User` and `Story` models with primary keys and relations:
+
+```go
+type User struct {
+	Id     int64
+	Name   string
+	Emails []string
+}
+
+type Story struct {
+	Id       int64
+	Title    string
+	AuthorId int64
+	Author   *User `pg:"rel:has-one"`
+}
+```
+
+- Use struct tags like `pg:",pk"` if you want to explicitly mark primary keys.
+- The `Author` relation illustrates how to model a "has-one" relationship.
+
+</Step>
+
+<Step title="Create Database Schema">
+Use go-pg's ORM to create tables matching your models:
+
+```go
+func createSchema(db *pg.DB) error {
+	models := []interface{}{(*User)(nil), (*Story)(nil)}
+
+	for _, model := range models {
+		err := db.Model(model).CreateTable(&orm.CreateTableOptions{
+			Temp: true, // Or false to create permanent tables
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+```
+
+Call `createSchema(db)` early to prepare your database.
+</Step>
+
+<Step title="Connect to Your PostgreSQL Database">
+Establish a connection using go-pg's `pg.Connect` method:
+
+```go
+db := pg.Connect(&pg.Options{
+	User: "postgres",
+	Password: "yourpassword",
+	Database: "yourdatabase",
+})
+// Remember to close the connection when done
+defer db.Close()
+```
+
+Make sure your credentials and database name match your environment.
+</Step>
+
+<Step title="Insert Sample Data">
+Create instances of your models and insert them into the database:
+
+```go
+user := &User{
+	Name:   "admin",
+	Emails: []string{"admin1@admin.com", "admin2@admin.com"},
+}
+_, err := db.Model(user).Insert()
+if err != nil {
+	panic(err)
+}
+
+story := &Story{
+	Title:    "Exciting Story",
+	AuthorId: user.Id,
+}
+_, err = db.Model(story).Insert()
+if err != nil {
+	panic(err)
+}
+```
+
+You can insert multiple records similarly, ensuring referential keys are set correctly.
+</Step>
+
+<Step title="Query Data With Relations">
+Fetch records including related models using the `Relation` method:
+
+```go
+var fetchedStory Story
+err = db.Model(&fetchedStory).
+	Relation("Author").
+	Where("story.id = ?", story.Id).
+	Select()
+if err != nil {
+	panic(err)
+}
+
+fmt.Printf("Story: %s, Author: %s\n", fetchedStory.Title, fetchedStory.Author.Name)
+```
+
+This retrieves the story and its linked author in a single query.
+</Step>
+
+<Step title="Handle Errors and Validate the Results">
+Always check errors returned from ORM methods, and verify data integrity:
+
+```go
+if err != nil {
+	if pgErr, ok := err.(pg.Error); ok {
+		fmt.Println("PostgreSQL error code:", pgErr.Field('C'))
+	} else {
+		panic(err)
+	}
+}
+```
+
+Printing or logging confirmed results helps validate your app's data flows.
+</Step>
+</Steps>
+
+---
+
+## 3. Complete Example Code
+
+Here is a self-contained example demonstrating the full workflow:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/go-pg/pg/v10"
+	"github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+	Id     int64
+	Name   string
+	Emails []string
+}
+
+type Story struct {
+	Id       int64
+	Title    string
+	AuthorId int64
+	Author   *User `pg:"rel:has-one"`
+}
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User: "postgres",
+		Password: "yourpassword",
+		Database: "yourdatabase",
+	})
+	defer db.Close()
+
+	err := createSchema(db)
+	if err != nil {
+		panic(err)
+	}
+
+	user := &User{
+		Name:   "admin",
+		Emails: []string{"admin1@admin.com", "admin2@admin.com"},
+	}
+	_, err = db.Model(user).Insert()
+	if err != nil {
+		panic(err)
+	}
+
+	story := &Story{
+		Title:    "Exciting Story",
+		AuthorId: user.Id,
+	}
+	_, err = db.Model(story).Insert()
+	if err != nil {
+		panic(err)
+	}
+
+	var fetchedStory Story
+	err = db.Model(&fetchedStory).
+		Relation("Author").
+		Where("story.id = ?", story.Id).
+		Select()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Story: %s, Author: %s\n", fetchedStory.Title, fetchedStory.Author.Name)
+}
+
+func createSchema(db *pg.DB) error {
+	models := []interface{}{(*User)(nil), (*Story)(nil)}
+
+	for _, model := range models {
+		err := db.Model(model).CreateTable(&orm.CreateTableOptions{
+			Temp: true,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+```
+
+Run this code after adjusting database credentials. It will demonstrate table creation, data insertion, and querying with relationships.
+
+---
+
+## 4. Tips, Best Practices & Troubleshooting
+
+<AccordionGroup title="Enhance Your Quickstart Experience">
+<Accordion title="Error Handling Best Practices">
+Always check the error returned by go-pg methods. Use type assertions to detect PostgreSQL specific errors and handle them gracefully. Avoid panics in production code.
+</Accordion>
+
+<Accordion title="Naming and Struct Tags">
+Use descriptive struct and field names matching your domain. Use explicit tags like `pg:",pk"` for composite primary keys or `pg:",many2many:..."` for many-to-many relations when needed.
+</Accordion>
+
+<Accordion title="Model Relationships">
+Start with simple relationships (`has-one`, `belongs-to`), then expand to `has-many` and `many-to-many`. Use the `Relation` method to eager load related data efficiently.
+</Accordion>
+
+<Accordion title="Testing Your Database Layer">
+Use temporary tables (`Temp: true`) for tests to avoid side effects. Clean up data between tests to ensure reliability.
+</Accordion>
+
+<Accordion title="Common Pitfalls">
+- Forgetting to call `defer db.Close()` can leak connections.
+- Mismatched primary key definitions cause errors in ORM methods.
+- Not enabling FK constraints on table creation if relationships depend on them.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## 5. Next Steps & Additional Resources
+
+- Explore [Defining Models and Basic CRUD](https://pg.uptrace.dev/guides/getting-started/define-models-crud) to deepen your knowledge on model usage.
+- Read [Advanced Queries and Model Relationships](https://pg.uptrace.dev/guides/working-with-data/advanced-queries-relations) to work with complex relationships.
+- Learn about [Configuration & Connecting to PostgreSQL](https://pg.uptrace.dev/getting-started/setup/configuration-setup) to optimize your connection setup.
+- Review the [Core Concepts & Terminology](https://pg.uptrace.dev/overview/product-intro-core-concepts/core-concepts-terminology) page to solidify foundational knowledge.
+
+---
