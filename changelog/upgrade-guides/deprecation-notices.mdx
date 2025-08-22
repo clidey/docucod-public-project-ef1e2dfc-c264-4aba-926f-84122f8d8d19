@@ -1,0 +1,163 @@
+---
+title: "Deprecation Notices"
+description: "Clear documentation of deprecated APIs, features, and configuration options, including timelines and alternatives. Helps users future-proof their code and avoid technical debt."
+---
+
+# Deprecation Notices
+
+## Overview
+The **Deprecation Notices** page provides clear, actionable documentation about APIs, features, and configuration options that are deprecated in go-pg. It helps users identify deprecated elements early, understand timelines for removal, and guides them toward recommended alternatives. This page plays a crucial role in future-proofing applications, avoiding technical debt, and ensuring smooth transitions to supported functionalities.
+
+By clearly communicating deprecations, the page empowers developers to maintain clean, maintainable codebases aligned with the latest go-pg best practices.
+
+---
+
+## Why Deprecation Matters
+Deprecation indicates that a feature or API is no longer recommended for use and will be removed in future releases. Continuing to rely on deprecated functionality risks:
+
+- **Security vulnerabilities**
+- **Loss of support and bug fixes**
+- **Increased maintenance burden**
+- **Potential breaking changes in future releases**
+
+This page helps avoid these pitfalls by giving you clear visibility into what is deprecated and when it will be removed.
+
+---
+
+## Deprecation Policies and Timelines
+
+1. **Advance Notice**: Features are flagged as deprecated well before removal, typically spanning multiple minor/patch releases.
+2. **Logging Warnings**: The system logs deprecation warnings during runtime to alert you.
+3. **Removal in Major Releases**: Deprecated features are usually removed in a subsequent major version to reduce upgrade risks.
+4. **Alternatives Provided**: Documentation includes recommended replacements or workaround approaches.
+
+### Example Deprecation Log Output
+The `internal/log.go` package uses a dedicated logger for deprecation messages:
+
+```go
+var Deprecated = log.New(os.Stderr, "DEPRECATED: pg: ", log.LstdFlags)
+```
+
+This warns developers during development or runtime when deprecated APIs are invoked.
+
+---
+
+## Common Deprecated Elements in go-pg
+
+| Deprecated Item              | Deprecation Reason                      | Alternative / Replacement             |
+|-----------------------------|---------------------------------------|-------------------------------------|
+| Certain legacy connection options | Security or design improvements      | Use updated connection configuration options (see [Configuration & Connecting to PostgreSQL](/getting-started/setup/configuration-setup))        |
+| Deprecated query building methods  | Better ORM query interfaces introduced | Use new ORM query builders and fluent APIs (see [Defining and Using Models](/api-reference/orm-model-workflows/defining-and-using-models))       |
+| Old transaction patterns           | Improved transaction handling         | Apply `RunInTransaction` method and context-aware transactions (see [Managing Transactions](/guides/application-patterns/transactions))        |
+| Removed composite or array type handling | Moving to improved type wrappers       | Follow enhanced composite and array usage (see [Composite and Custom Types](/api-reference/advanced-types-and-query-features/composite-and-custom-types), [Array JSONB and Hstore Support](/api-reference/advanced-types-and-query-features/array-jsonb-and-hstore-support)) |
+
+---
+
+## How to Identify Deprecated Usage
+
+- **Compile-Time Warnings**: Some deprecated functions have comments or annotations flagged by the Go compiler or linters.
+- **Runtime Warnings**: Logs produced during application startup or query execution highlight deprecated features.
+- **Documentation Flags**: Deprecated functions or fields are marked explicitly in the API docs.
+
+Use logging facilities in `internal/log.go` to observe runtime warnings:
+
+```go
+Deprecated.Printf(ctx, "Use of deprecated option X detected, please migrate to option Y")
+```
+
+---
+
+## Best Practices for Managing Deprecations
+
+### 1. Monitor Logs Efficiently
+Enable standard error logging in development and staging environments. Regularly scan for `DEPRECATED` messages that indicate outdated usage.
+
+### 2. Review and Refactor Early
+Treat deprecation warnings as imperative to address in your next development cycle. Early refactoring reduces risk.
+
+### 3. Consult Documentation
+Refer to updated guides and migration notes for recommended replacements. The [Migration Notes & Upgrade Steps](/changelog/upgrade-guides/migration-notes) guide provides detailed instructions.
+
+### 4. Test Thoroughly
+After migrating away from deprecated functionality, run your test suite and validate application behavior to catch regressions early.
+
+### 5. Pin Dependency Versions Carefully
+Avoid premature removal of deprecated features by pinning to stable minor versions during migration windows.
+
+---
+
+## Common Pitfalls and How to Avoid Them
+
+| Pitfall                                         | How to Avoid                                       |
+|------------------------------------------------|---------------------------------------------------|
+| Ignoring deprecation warnings                   | Set up monitoring tools to detect logs automatically |
+| Deferred upgrades causing cascading breaks     | Schedule regular upgrade cycles with migration planning |
+| Using deprecated features in new code          | Check API docs and linter warnings before development |
+| Overlooking migration guides                    | Incorporate official migration notes into your upgrade checklist |
+
+---
+
+## Deprecation & Removal Workflow Example
+
+<Steps>
+<Step title="Detect Deprecated Usage">
+Monitor logs and compile-time warnings to detect all deprecated APIs in use.
+</Step>
+<Step title="Plan Migration">
+Identify replacement APIs or features. Consult migration notes and documentation.
+</Step>
+<Step title="Refactor Code">
+Update your codebase to eliminate deprecated APIs, switching to recommended alternatives.
+</Step>
+<Step title="Test After Changes">
+Run integration and unit tests to verify application stability.
+</Step>
+<Step title="Upgrade go-pg Version">
+Follow upgrade guides to move to the next major release that removes deprecated features.
+</Step>
+</Steps>
+
+---
+
+## Troubleshooting Deprecated Features
+
+<AccordionGroup title="Common Troubleshooting Steps">
+<Accordion title="Deprecation warnings flood logs unexpectedly">
+Reduce log verbosity in production or redirect logs. Use structured logging and filters to handle deprecation warnings.
+</Accordion>
+<Accordion title="Code fails after removing deprecated feature">
+Check migration guides for alternate implementations. Validate upgrade guides and test dependency versions.
+</Accordion>
+<Accordion title="Unclear deprecation warnings">
+Consult the go-pg GitHub repository issues or community forums for clarifications. Review source code logs in internal/log.go.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Additional Resources & Cross-References
+
+- [Migration Notes & Upgrade Steps](/changelog/upgrade-guides/migration-notes): Detailed instructions for upgrading and replacing deprecated features.
+- [Breaking Changes Documentation](/changelog/upgrade-guides/breaking-changes): Understand the impact of removed deprecated features.
+- [Defining and Using Models](/api-reference/orm-model-workflows/defining-and-using-models): Adopt updated model definitions avoiding deprecated struct tags or conventions.
+- [Configuration & Connecting to PostgreSQL](/getting-started/setup/configuration-setup): Update connection settings using current best practices.
+- [Managing Transactions](/guides/application-patterns/transactions): Utilize improved transaction patterns replacing old deprecated methods.
+
+---
+
+## Conclusion
+Staying ahead of deprecations in go-pg ensures your applications are secure, maintainable, and ready for future improvements. Use this page as your go-to resource for identifying deprecated features, understanding removal timelines, and executing smooth migrations to supported, modern go-pg capabilities.
+
+Always combine regular code reviews, log monitoring, and documentation consultation for best results.
+
+---
+
+
+<Check>
+Remember: Deprecated features continue to work temporarily but always have a replacement path – migrate early to safeguard your project.
+</Check>
+
+
+<Info>
+If you want to contribute updates or report unclear deprecation warnings, visit the [go-pg GitHub repository](https://github.com/go-pg/pg) and check existing issues or open new discussions.
+</Info>
