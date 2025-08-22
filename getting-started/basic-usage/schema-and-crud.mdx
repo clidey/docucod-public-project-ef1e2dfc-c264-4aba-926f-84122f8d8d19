@@ -1,0 +1,340 @@
+---
+title: "Creating Tables & Basic CRUD"
+description: "Use go-pg to automatically create database tables from model structs and perform initial insert and select operations. Follow a simple, practical example to see your data flow from Go to PostgreSQL and back."
+---
+
+# Creating Tables & Basic CRUD with go-pg
+
+Use go-pg to automatically create database tables from Go model structs and perform initial insert and select operations. This guide walks you through a practical example demonstrating how your data flows from Go code into PostgreSQL tables and back, empowering you with a smooth start to mapping and manipulating your database using go-pg.
+
+---
+
+## 1. Prerequisites & System Setup
+
+Before creating tables and running CRUD operations, ensure the following:
+
+- **Go Version:** You are using Go 1.16 or newer with modules enabled.
+- **PostgreSQL Setup:** Have access to a running PostgreSQL 9.6+ server with valid connection credentials.
+- **Module Initialization:** Your Go project should be initialized as a module.
+
+Example:
+```bash
+mkdir myproject && cd myproject
+go mod init github.com/myuser/myproject
+```
+
+---
+
+## 2. Define Your Data Models
+
+Design your Go structs that represent your PostgreSQL tables. Use go-pg struct tags to specify primary keys and relationships.
+
+### Example Models:
+
+```go
+package main
+
+type User struct {
+    Id     int64
+    Name   string
+    Emails []string
+}
+
+type Story struct {
+    Id       int64
+    Title    string
+    AuthorId int64
+    Author   *User `pg:"rel:has-one"`
+}
+```
+
+### Notes:
+- Use `pg:",pk"` tag to mark primary key fields explicitly if needed.
+- Use `pg:"rel:has-one"` to specify a one-to-one relationship.
+
+---
+
+## 3. Create Database Tables Automatically
+
+go-pg can auto-generate PostgreSQL tables based on your model definitions.
+
+### Steps:
+
+1. Connect to your database:
+
+   ```go
+   db := pg.Connect(&pg.Options{
+       User: "postgres",
+       Password: "yourpassword",
+       Database: "yourdb",
+   })
+   defer db.Close()
+   ```
+
+2. Use `CreateTable` method with options to create tables:
+
+   ```go
+   import "github.com/go-pg/pg/v10/orm"
+
+   err := db.Model((*User)(nil), (*Story)(nil)).
+            CreateTable(&orm.CreateTableOptions{
+                Temp: false,            // set to true if you want temporary tables
+                FKConstraints: true,    // enable foreign key constraints
+                IfNotExists: true,      // avoid error if table exists
+            })
+   if err != nil {
+       panic(err)
+   }
+   ```
+
+### What happens?
+- Each struct corresponds to a PostgreSQL table.
+- Fields map to columns.
+- go-pg generates appropriate SQL `CREATE TABLE` statements including primary keys and foreign key constraints based on relationships.
+
+---
+
+## 4. Insert Data into Tables
+
+Once tables are created, insert data from your Go structs into the database with ease.
+
+### Insert Single Record
+
+```go
+user := &User{
+    Name:   "admin",
+    Emails: []string{"admin1@admin", "admin2@admin"},
+}
+_, err := db.Model(user).Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+### Insert Multiple Records (Bulk Insert)
+
+```go
+users := []User{{Name: "user1"}, {Name: "user2"}}
+_, err = db.Model(&users).Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+### Notes:
+- Bulk inserting slices is efficient and automatically handled.
+- After insertion, primary key fields (if serial) are automatically populated in your structs.
+
+---
+
+## 5. Query Data (Select)
+
+Fetching data is straightforward and supports loading related models.
+
+### Select By Primary Key
+
+```go
+user := &User{Id: 1}
+err := db.Model(user).WherePK().Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(user)
+```
+
+### Select Multiple Rows
+
+```go
+var users []User
+err = db.Model(&users).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(users)
+```
+
+### Select with Related Models (Joins)
+
+```go
+story := new(Story)
+err = db.Model(story).
+    Relation("Author").
+    Where("story.id = ?", 1).
+    Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(story, story.Author)
+```
+
+---
+
+## 6. Update Existing Records
+
+Update models using primary key matching.
+
+```go
+user := &User{Id: 1}
+_ = db.Model(user).WherePK().Select()
+user.Name = "updated name"
+_, err := db.Model(user).WherePK().Update()
+if err != nil {
+    panic(err)
+}
+```
+
+For updating specific columns only:
+```go
+_, err = db.Model(user).Column("name").WherePK().Update()
+```
+
+---
+
+## 7. Delete Records
+
+Delete a record by primary key:
+
+```go
+user := &User{Id: 1}
+_, err := db.Model(user).WherePK().Delete()
+if err != nil {
+    panic(err)
+}
+```
+
+Delete multiple records with conditions:
+
+```go
+res, err := db.Model((*User)(nil)).Where("id IN (?)", pg.In([]int64{1,2,3})).Delete()
+if err != nil {
+    panic(err)
+}
+fmt.Printf("Deleted %d rows\n", res.RowsAffected())
+```
+
+---
+
+## 8. Practical Example Putting It All Together
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+    Id     int64
+    Name   string
+    Emails []string
+}
+
+type Story struct {
+    Id       int64
+    Title    string
+    AuthorId int64
+    Author   *User `pg:"rel:has-one"`
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User: "postgres",
+        Password: "yourpassword",
+        Database: "yourdb",
+    })
+    defer db.Close()
+
+    // Create tables
+    err := db.Model((*User)(nil), (*Story)(nil)).CreateTable(&orm.CreateTableOptions{
+        IfNotExists: true,
+        FKConstraints: true,
+    })
+    if err != nil {
+        panic(err)
+    }
+
+    // Insert a user
+    user := &User{Name: "admin", Emails: []string{"admin@example.com"}}
+    _, err = db.Model(user).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    // Insert a story by this user
+    story := &Story{Title: "Golang and PostgreSQL", AuthorId: user.Id}
+    _, err = db.Model(story).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    // Fetch story with author info
+    fetchedStory := &Story{Id: story.Id}
+    err = db.Model(fetchedStory).
+        Relation("Author").
+        WherePK().
+        Select()
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println(fetchedStory)
+    fmt.Println(fetchedStory.Author)
+}
+```
+
+---
+
+## 9. Common Pitfalls & Tips
+
+- **Table Already Exists:** Use `IfNotExists: true` in `CreateTableOptions` to avoid errors if table exists.
+- **Missing Primary Keys:** Ensure your structs have primary keys defined via tags like `pg:",pk"` for auto-generated SQL schema and ORM functionality.
+- **Handling Relationships:** Be explicit with relation tags (`pg:"rel:has-one"`, `rel:has-many"`, `rel:many2many"`) to enable automatic JOINs.
+- **Slice vs Pointer Slice:** When bulk inserting slices, pass the slice address (`&slice`) to `.Model()`.
+- **Error Handling:** Always check errors on insert/select/update/delete to catch schema or connection issues early.
+
+---
+
+## 10. Troubleshooting
+
+<AccordionGroup title="Troubleshooting Table Creation and CRUD Operations">
+<Accordion title="Error: can't find column in model">
+This error means that the SQL query returned a column that your Go struct does not have. Possible solutions:
+- Add the missing field to your struct.
+- Use `pg:",discard_unknown_columns"` tag on your struct to ignore unknown columns.
+</Accordion>
+
+<Accordion title="Foreign key constraint errors during table creation">
+Ensure that all referenced tables are created before you create tables with foreign keys. Use `FKConstraints: true` option to automatically generate constraints.
+</Accordion>
+
+<Accordion title="Insert operation fails with primary key issues">
+Make sure primary keys are declared with `pg:",pk"` and are compatible types. For serial columns, allow PostgreSQL to generate the value.
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## 11. Next Steps & Related Guides
+
+Once comfortable with creating tables and basic CRUD operations, explore:
+
+- [Defining Your First Model](/getting-started/basic-usage/first-model)
+- [Connecting to PostgreSQL](/getting-started/basic-usage/initial-connection)
+- [Working with Associations: HasOne, HasMany, ManyToMany](/guides/advanced-orm-patterns/working-with-associations)
+- [Implementing Soft Deletes](/guides/advanced-orm-patterns/soft-deletes-best-practices)
+- [Bulk and Batch Operations](/guides/advanced-orm-patterns/bulk-operations)
+
+---
+
+## References
+
+- Official [go-pg README](https://github.com/go-pg/pg/blob/main/README.md)
+- [API Documentation](https://pkg.go.dev/github.com/go-pg/pg/v10/orm)
+- [Example Model Usage](https://github.com/go-pg/pg/blob/main/example_model_test.go)
+
+---
+
+This guide equips you with clear, practical steps to create tables from Go structs and perform initial insert and select operations using go-pg ORM, providing a solid foundation for effective database interaction in Go projects.
