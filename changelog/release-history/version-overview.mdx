@@ -1,0 +1,117 @@
+---
+title: "Version Overview"
+description: "A summary of all major and minor go-pg releases, their dates, and a brief highlight of the directional focus of each version. Use this to get a high-level sense of development cadence and major turning points for the project."
+---
+
+# Version Overview
+
+This page presents a clear, high-level summary of go-pg's major and minor releases, their release dates, and the primary themes or focus areas for each version. It helps users grasp how the library has evolved over time, highlighting critical milestones, key improvements, and strategic shifts in the project's development.
+
+---
+
+## Understanding go-pg Release Versions
+
+The go-pg project employs semantic versioning with versions typically structured as `MAJOR.MINOR.PATCH` (e.g., 10.15.0). Users can interpret these numbers to understand the nature of each release:
+
+- **Major versions** (e.g., 10.x.x) introduce significant features and possibly breaking changes.
+- **Minor versions** (e.g., 10.15.x) add incremental features or enhancements without breaking compatibility.
+- **Patch versions** (e.g., 10.15.0) primarily provide bug fixes and stability improvements.
+
+Each released version reflects a step forward in the go-pg ecosystem, balancing the addition of powerful new capabilities with reliability and performance refinements.
+
+## Recent and Notable Releases
+
+### Latest Release: 10.15.0
+- **Release Date:** [Refer to official release announcements]
+- **Focus:** Continued maintenance with critical fixes and minor improvements.
+
+### Key Historical Milestones (Representative Examples)
+- Transition to **go-pg v10**, marking a major stable iteration with enhanced PostgreSQL type support, more flexible query building, and optimized connection pooling.
+- Introduction of bulk and batch operations, enabling large-scale inserts, updates, and deletes to improve application performance.
+- Expanded transaction and prepared statement API to encourage safe, efficient database operations.
+- Integration support for PostgreSQL's LISTEN/NOTIFY system alongside performant bulk data copy features (COPY FROM/TO).
+- Enhanced observability with built-in debugging hooks and OpenTelemetry tracing compatibility.
+
+## Changelog Flow and User Impact
+
+This overview is designed from user intent: to quickly identify what capabilities and reliability improvements have shipped in each version without diving into internal implementation details.
+
+- Users considering upgrades can reference this summary to assess the value and risk associated with moving between versions.
+- Developers tracking project evolution gain insight into the pacing and directional focus of development efforts.
+
+## Best Practices for Using Version Information
+
+- Always check for **breaking changes** or **deprecations** in major releases; upgrade guides are available in the changelog for detailed migration instructions.
+- Use patch and minor releases to obtain the latest bug fixes and performance improvements safely.
+- Track release cadence to plan integration and testing cycles effectively.
+
+## Troubleshooting & Support
+
+Issues encountered may correspond to versions with known bugs or limitations. Cross-reference your installed version with the release history and associated notes to quickly identify if an upgrade or patch applies.
+
+Refer to detailed troubleshooting guides:
+- [Resolving Installation and Import Errors](/getting-started/troubleshooting/installation-errors)
+- [Solving Connection Problems](/getting-started/troubleshooting/connection-errors)
+
+## Related Documentation
+
+Explore surrounding documentation to deepen context and practical application:
+
+- **Release Notes**: Detailed feature-by-feature and fix-by-fix documentation for each release.
+- **Breaking Changes & Upgrades**: In-depth guidance for migrating safely between major and minor versions.
+- **Upgrade Guides**: Step-by-step instructions to move to the latest supported version.
+
+## Example Release Summary Format (Extract)
+
+| Version | Release Date | Highlights |
+|---------|--------------|------------|
+| 10.15.0 | YYYY-MM-DD   | Bug fixes, performance tuning, maintenance updates |
+| 10.14.0 | YYYY-MM-DD   | Enhanced connection pooling options, improved error handling |
+| 10.0.0  | YYYY-MM-DD   | Major version with full PostgreSQL type support, new ORM features |
+
+*(Exact dates and content to be updated alongside official release announcements)*
+
+---
+
+## Summary
+The Version Overview page provides a high-level chronology of go-pg releases, focusing on user-centric information such as release timing and the focus of each version. It enables users to evaluate the project's evolution, understand the value of updates, and prepare for migrations or upgrades with confidence.
+
+---
+
+# Additional Resources
+
+- [Release Notes](/changelog/release-history/release-notes)
+- [Breaking Changes](/changelog/change-details/breaking-changes)
+- [Upgrade Guides](/changelog/change-details/upgrade-guides)
+- [Connect to PostgreSQL Guide](/getting-started/basic-usage/initial-connection)
+- [Defining Models Guide](/guides/getting-started/modeling-data-structs)
+
+
+---
+
+# Example: Checking Current Version Programmatically
+
+You can retrieve the installed go-pg version in code to ensure compatibility or troubleshooting accuracy:
+
+```go
+package pg
+
+// Version returns the current release version.
+func Version() string {
+    return "10.15.0"
+}
+```
+
+Use this in your application or tooling to verify which go-pg release you are working with.
+
+---
+
+# Navigational Context
+
+This page situates under the **Changelog** tab alongside detailed release notes and change details. It is intended as a gateway to understanding go-pg's development cadence and the nature of updates, supporting effective version management.
+
+---
+
+<Tip>
+For deeper technical details on each release, always consult the [Release Notes](/changelog/release-history/release-notes) page. This Version Overview helps you get oriented quickly before drilling down.
+</Tip>
