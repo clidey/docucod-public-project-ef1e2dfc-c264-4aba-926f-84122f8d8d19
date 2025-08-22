@@ -1,0 +1,249 @@
+---
+title: "Error Handling & Status Codes"
+description: "Reference common error types, how to interpret status codes, and best practices for robust error handling and recovery. Includes details on retry strategies and connection issues."
+---
+
+# Error Handling & Status Codes
+
+Effective error handling is crucial when working with go-pg to build resilient and maintainable applications that interact with PostgreSQL. This reference explains the common error types you may encounter, how to interpret status codes returned by PostgreSQL, and strategies to handle errors robustly—including retries and connection management best practices.
+
+---
+
+## 1. Understanding Common Error Types
+
+### PostgreSQL Server Errors
+- Errors returned by PostgreSQL server conform to the [PostgreSQL ErrorResponse protocol](https://www.postgresql.org/docs/10/static/protocol-message-formats.html).
+- These errors implement the `Error` interface, allowing access to specific PostgreSQL error fields.
+
+### Key Defined Errors
+- `ErrNoRows`: Returned when a query expecting a row returns none.
+- `ErrMultiRows`: Returned when a query expecting exactly one row returns multiple rows.
+
+```go
+var ErrNoRows = internal.ErrNoRows
+var ErrMultiRows = internal.ErrMultiRows
+```
+
+### Error Interface Highlights
+```go
+type Error interface {
+    error
+
+    // Field returns a string value associated with a specific error field byte.
+    Field(field byte) string
+
+    // IntegrityViolation reports if the error belongs to integrity constraint violations.
+    IntegrityViolation() bool
+}
+```
+
+This allows you to pattern-match specific database error codes and classes for fine-grained handling.
+
+## 2. Inspecting Error Details
+
+### Using Error Fields
+PostgreSQL errors encode detailed information in fields identified by a single byte. Some key fields:
+
+| Field Byte | Meaning                      |
+|------------|------------------------------|
+| 'C'        | SQLSTATE error code           |
+| 'M'        | Primary human-readable message|
+| 'S'        | Severity                      |
+| 'V'        | Message severity (e.g., PANIC)|
+
+Example: Checking if an error is a fatal error.
+
+```go
+if pgErr, ok := err.(pg.Error); ok {
+    if pgErr.Field('V') == "FATAL" || pgErr.Field('V') == "PANIC" {
+        // Handle fatal error
+    }
+}
+```
+
+### Integrity Violations
+Check if an error is an integrity violation, such as unique constraint failures or foreign key violations:
+
+```go
+if pgErr, ok := err.(pg.Error); ok {
+    if pgErr.IntegrityViolation() {
+        // Handle constraint violation error
+    }
+}
+```
+
+## 3. Classifying Connection Errors
+
+Efficient handling of connection errors is vital to avoid resource leaks and ensure retry safety.
+
+### Detecting Bad Connections
+The `isBadConn` helper analyzes errors to determine if a connection should be discarded:
+
+- Fatal or panic-level server errors
+- State errors signaling aborted transactions
+- Network timeouts
+
+```go
+func isBadConn(err error, allowTimeout bool) (bool, string) {
+    // Returns true and optionally an error code if connection is bad
+}
+```
+
+### Handling Timeout Errors
+Since network timeouts are common transient errors, the check considers `net.Error.Timeout()` and temporary flags.
+
+## 4. Retry Strategy and Error Handling Best Practices
+
+### When to Retry
+- Queries producing transient or timeout errors can be retried based on the `MaxRetries` and `RetryStatementTimeout` options.
+- Use the error interface and connection pool stats to decide.
+
+### Avoid Retrying on Integrity Violations
+- Do not retry statements that fail due to integrity constraints or fatal server errors.
+
+### Managing Context Deadlines
+- Use context cancellations to stop retrying when deadlines expire.
+
+### Example: Retry Loop
+```go
+for i := 0; i < opts.MaxRetries; i++ {
+    err := db.Exec(query)
+    if err == nil {
+        break
+    }
+    badConn, _ := isBadConn(err, true)
+    if badConn {
+        // Remove bad connection from pool
+    }
+    if !retryable(err) {
+        return err
+    }
+    time.Sleep(backoff(i))
+}
+```
+
+## 5. Connection Pooling and Error Handling
+
+### Connection Lifecycle and Errors
+- On connection failure, pool marks and removes bad connections.
+- Pool timeouts return `ErrPoolTimeout` when no free connection is available within the configured duration.
+
+### Common Errors
+| Error                 | Cause                                                  |
+|-----------------------|--------------------------------------------------------|
+| `pg: database is closed` | Attempted operation on closed connection pool          |
+| `pg: connection pool timeout` | Waiting too long for an available connection         |
+
+### Handling Pool Errors
+Check for these errors explicitly and take remedial actions like retrying or logging.
+
+## 6. Practical Code Example: Error Handling
+
+Here is a typical usage pattern illustrating error handling and connection removal.
+
+```go
+func performQuery(db *pg.DB, query string) error {
+	ctx := context.Background()
+	cn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer cn.Close()
+
+	err = cn.Exec(query)
+	if err != nil {
+		badConn, _ := pg.isBadConn(err, true)
+		if badConn {
+			db.Pool.Remove(ctx, cn.Conn, err)
+		}
+		return err
+	}
+	return nil
+}
+```
+
+## 7. Troubleshooting Common Scenarios
+
+### Pool Timeout Errors
+- Occur when all connections are busy.
+- Consider increasing `PoolSize` or reducing connection hold time.
+
+### No Rows Found
+- Handle `ErrNoRows` explicitly when a query expects a result.
+
+### Multiple Rows Found
+- Handle `ErrMultiRows` to avoid data inconsistency.
+
+### Authentication or Network Issues
+- Inspect error fields for codes `25P02`, `57014` to understand cancel or transaction state.
+
+## 8. Summary of Key Error Codes
+
+| SQLSTATE Code | Meaning                                      |
+|---------------|----------------------------------------------|
+| 25P02         | Transaction is aborted                        |
+| 57014         | Statement cancelled by user                   |
+| 23505         | Unique constraint violation                   |
+| 23503         | Foreign key violation                         |
+
+Use these codes to customize error responses.
+
+## 9. Additional Resources and References
+
+- [PostgreSQL ErrorFields Documentation](https://www.postgresql.org/docs/current/protocol-error-fields.html)
+- [PostgreSQL Error Codes](https://www.postgresql.org/docs/current/errcodes-appendix.html)
+- Related guide: [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling)
+- Related page: [Authentication and Security Patterns](/api-reference/common-operations-examples/authentication-security)
+- Related guide: [Transaction Management](/guides/real-world-integration-patterns/transaction-management)
+
+---
+
+## Appendix
+
+### Error Interface Implementation Example
+```go
+type PGError struct {
+    m map[byte]string
+}
+
+func (err PGError) Field(k byte) string {
+    return err.m[k]
+}
+
+func (err PGError) IntegrityViolation() bool {
+    switch err.Field('C') {
+    case "23000", "23001", "23502", "23503", "23505", "23514", "23P01":
+        return true
+    default:
+        return false
+    }
+}
+
+func (err PGError) Error() string {
+    return fmt.Sprintf("%s #%s %s", err.Field('S'), err.Field('C'), err.Field('M'))
+}
+```
+
+### Checking for Retryable Errors
+```go
+func retryable(err error) bool {
+    if err == nil {
+        return false
+    }
+    if pgErr, ok := err.(pg.Error); ok {
+        // Add logic for codes that may be safe to retry
+        return false
+    }
+    // Check for network timeout, etc.
+    if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+        return true
+    }
+    return false
+}
+```
+
+---
+
+This page arms you with concrete approaches and actionable knowledge to identify, handle, and recover from PostgreSQL and connection pool errors when using go-pg, helping you build robust Go applications with confidence.
+
+
