@@ -1,0 +1,188 @@
+---
+title: "Why am I seeing import or installation errors?"
+description: "Answers to typical problems such as missing the v10 suffix in import paths, Go modules setup issues, and resolving dependency mismatches. Includes step-by-step solutions for getting go-pg running."
+---
+
+# Why am I seeing import or installation errors?
+
+This FAQ page addresses the most common errors encountered when trying to install or import the go-pg v10 module in your Go project. These issues often stem from incorrect import paths (such as missing the required `v10` suffix), problems with Go modules setup, or dependency mismatches. This guide provides clear, step-by-step solutions to help you get go-pg up and running smoothly.
+
+---
+
+## 1. Common Causes of Import or Installation Errors
+
+- **Missing the `v10` Suffix in Import Path:** The most frequent mistake is importing the package without the required `/v10` suffix. For example, `import "github.com/go-pg/pg"` instead of `import "github.com/go-pg/pg/v10"`.
+- **Go Modules Not Initialized or Misconfigured:** If your project is not using Go modules, or if your `go.mod` file is not correctly set up, module resolution will fail.
+- **Incorrect Versioning or Module Proxy Issues:** Using an outdated version, or issues with Go proxy or cache, can prevent proper retrieval.
+- **Dependency Conflicts or Version Mismatches:** Conflicting versions between dependencies can cause build or import failures.
+
+---
+
+## 2. How to Fix Missing or Incorrect Import Path
+
+### Step 1: Ensure Module Initialization
+
+Make sure your project uses Go modules by running in your project root:
+
+```bash
+go mod init github.com/your/repo
+```
+
+This creates a `go.mod` file to manage dependencies.
+
+### Step 2: Import the Correct Package Path
+
+Always include the `v10` version suffix when importing go-pg:
+
+```go
+import "github.com/go-pg/pg/v10"
+```
+
+This is mandatory starting from go-pg v10 due to semantic import versioning.
+
+### Step 3: Install the Package with Go Get
+
+Run:
+
+```bash
+go get github.com/go-pg/pg/v10
+```
+
+This will download and add go-pg to your module dependencies.
+
+### Step 4: Verify Module Versions
+
+Run:
+
+```bash
+go list -m all | grep go-pg
+```
+
+To confirm `github.com/go-pg/pg/v10` is listed.
+
+### Example Minimal Setup
+
+```bash
+mkdir myproject
+cd myproject
+
+go mod init github.com/my/repo
+
+go get github.com/go-pg/pg/v10
+```
+
+Then use in Go code:
+
+```go
+package main
+
+import (
+	"github.com/go-pg/pg/v10"
+)
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User: "postgres",
+	})
+	defer db.Close()
+
+	// Your code here
+}
+```
+
+---
+
+## 3. Troubleshooting Go Modules Setup Issues
+
+- **Ensure Go is Version 1.13 or Newer:** go-pg v10 requires modules, available by default from Go 1.13+
+- **Clear Module Cache:** Run `go clean -modcache` if corrupted cache suspected.
+- **Check `go.mod` and `go.sum` Files:** Run `go mod tidy` to fix missing or unused dependencies.
+- **Disable GOPROXY or Configure Correctly:** If behind a proxy or firewall, ensure Go proxy settings allow module fetching.
+
+---
+
+## 4. Handling Dependency Mismatches and Version Conflicts
+
+If you see errors about incompatible versions or checksum mismatches:
+
+- Run `go mod tidy` to clean dependencies.
+- Check if other dependencies require conflicting versions.
+- Use `go get -u github.com/go-pg/pg/v10` to update.
+- If needed, manually edit `go.mod` to adjust versions.
+
+---
+
+## 5. Common Error Messages and How to Interpret Them
+
+| Error Message                                 | Meaning & Solution                                      |
+|-----------------------------------------------|--------------------------------------------------------|
+| `cannot find package "github.com/go-pg/pg"` | Forgot `/v10` suffix; update import to include `v10`. |
+| `module github.com/go-pg/pg: no matching versions` | Go module proxy issue or network problem; check proxy and retry. |
+| `go: inconsistent vendoring detected`          | Run `go mod tidy` to correct dependencies.             |
+| `go: github.com/go-pg/pg@vX.Y.Z: unknown revision` | Invalid version requested; specify supported v10 versions. |
+
+---
+
+## 6. Best Practices and Tips
+
+- Always initialize your project with Go modules (`go mod init`).
+- Make sure all go-pg imports include the exact major version suffix (`v10`).
+- Use the command `go get github.com/go-pg/pg/v10` to fetch the correct version.
+- Regularly run `go mod tidy` to keep dependencies consistent.
+- Review your environment variables like `GOPROXY`, `GONOPROXY`, and `GOPRIVATE` if you have private modules or restricted access.
+- For reproducibility, commit `go.mod` and `go.sum` files to your version control.
+
+---
+
+## 7. Example of a Minimal Working Go Program with go-pg v10
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/go-pg/pg/v10"
+)
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User: "postgres",
+	})
+	defer db.Close()
+
+	var n int
+	_, err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Query result:", n)
+}
+```
+
+Run with:
+
+```bash
+go run main.go
+```
+
+If this runs without error, go-pg v10 is installed and imported correctly.
+
+---
+
+## 8. Additional Resources
+
+- [go-pg GitHub Repository](https://github.com/go-pg/pg)
+- [Official go-pg Documentation](https://pg.uptrace.dev/)
+- [Installation & Setup Guide](https://pg.uptrace.dev/guides/getting-started/install-configure)
+- [Common Setup Troubleshooting](https://pg.uptrace.dev/getting-started/first-use/troubleshooting-common-setup-issues)
+
+---
+
+<Tip>
+If you see import errors, double-check your import paths to always include the `/v10` module suffix. This requirement is critical for Go modules and is a frequent source of confusion.
+</Tip>
+
+<Warning>
+Do not mix go-pg v10 imports with v9 or earlier versions. Each major version uses a unique module path; mixing can cause build failures.
+</Warning>
