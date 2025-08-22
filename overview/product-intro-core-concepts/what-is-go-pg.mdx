@@ -1,0 +1,192 @@
+---
+title: "What is go-pg?"
+description: "Learn about go-pg's role as a high-performance, feature-rich PostgreSQL client and ORM for Go, designed to simplify and accelerate database access and manipulation. Understand its value proposition, why it stands out among alternatives, and how it fits into modern Go backends and microservices."
+---
+
+# What is go-pg?
+
+## Unlock High-Performance PostgreSQL Access in Go with go-pg
+
+go-pg is a robust, high-performance PostgreSQL client and Object-Relational Mapper (ORM) designed specifically for Go developers. It streamlines database operations by combining a full-featured SQL querying interface with ORM conveniences, empowering you to write clean, efficient, and maintainable PostgreSQL access code.
+
+### Why go-pg Matters
+
+- **Simplify Database Access:** Write expressive queries using Go structs and idiomatic code instead of raw SQL strings.
+- **Accelerate Backend Development:** Quickly map complex data models and relations directly in Go, reducing boilerplate.
+- **Achieve Optimal Performance:** Benefit from a client focused solely on PostgreSQL, optimized for fast query execution and low latency.
+- **Advanced ORM Features:** Manage relationships, transactions, and batch operations smoothly.
+- **Flexible and Powerful:** Supports advanced PostgreSQL types like arrays, JSONB, hstore, composite types, and more.
+
+### Who Should Use go-pg?
+
+Whether you're building microservices, APIs, or backend applications in Go, go-pg is tailored for developers and teams seeking efficient and idiomatic PostgreSQL management without the overhead of complex frameworks.
+
+---
+
+## What is go-pg?
+
+go-pg is a specialized Go library that serves as both a PostgreSQL client and a feature-rich ORM. It provides an idiomatic way to interact with PostgreSQL databases from Go applications by bridging Go structs and types with database tables and queries.
+
+At its core, go-pg addresses the complexity and verbosity of crafting raw SQL queries by offering:
+
+- A fluent ORM to map Go structs to PostgreSQL tables.
+- A powerful query builder enabling both high-level ORM operations and raw SQL when needed.
+- Support for advanced PostgreSQL features seamlessly integrated into Go code.
+
+This empowers developers to write clean, maintainable, and effective database code in Go.
+
+### What Problems does go-pg Solve?
+
+- **Reducing Boilerplate:** Automatically converting between database rows and Go structs.
+- **Managing Relations:** Handling one-to-one, one-to-many, and many-to-many relationships without repetitive SQL.
+- **Optimizing Queries:** Enabling batch operations, prepared statements, and efficient connection management.
+- **Leveraging PostgreSQL Features:** Using arrays, JSON, composite types, and transactions transparently.
+
+### How go-pg Stands Out
+
+Unlike general-purpose or multi-database libraries, go-pg is finely tuned for PostgreSQL and Go, providing:
+
+- Native PostgreSQL type support,
+- First-class support for composite and custom types,
+- Automatic connection pooling with built-in circuit breaker logic,
+- Reliable retry on network errors,
+- Deep integration with Go's context for query timeouts and cancellations,
+- Transparent soft deletes and audit mechanisms.
+
+This focused design delivers speed, predictability, and power.
+
+### Position in Modern Go Backends and Microservices
+
+In an ecosystem filled with ORMs, libs, and clients, go-pg plays the role of the dependable PostgreSQL expert. It fits naturally into microservices and backend services written in Go where PostgreSQL is the trusted database layer. It is ideal for projects demanding:
+
+- Tight integration of database models with Go domain models.
+- High throughput and low latency data access.
+- Manageable, complex ORM features without sacrificing control.
+
+---
+
+## Key Features & Capabilities
+
+### Core Functionalities
+
+- **Type Support:** Handles basic Go types, `sql.Null*` types, and advanced PostgreSQL types such as multidimensional arrays, hstore, composite types, JSONB with `json.Number` support.
+- **Rich ORM Relations:** Supports `has one`, `belongs to`, `has many`, and `many to many` relationships with composite keys.
+- **Transactions & Prepared Statements:** Run safe and efficient transactional operations.
+- **Bulk Operations:** Batch inserts, updates, and deletes for performance gains.
+- **Hooks & Extensibility:** Lifecycle hooks for injecting custom logic at select, insert, update, and delete phases.
+- **Soft Deletes:** Built-in support for logical deletions.
+- **Query Features:** Common table expressions (WITH clauses), ON CONFLICT upserts, SELECT OR INSERT, and count estimates.
+- **Notifications:** PostgreSQL LISTEN/NOTIFY support for reactive applications.
+- **Connection Pooling:** Automatic with circuit breaker and retries on transient failures.
+
+### Example: Modeling a User and Story
+
+```go
+ type User struct {
+     Id     int64
+     Name   string
+     Emails []string
+ }
+
+ type Story struct {
+     Id       int64
+     Title    string
+     AuthorId int64
+     Author   *User `pg:"rel:has-one"`
+ }
+
+ // Insert user
+ user := &User{Name: "Alice"}
+ _, err := db.Model(user).Insert()
+
+ // Insert story linked to user
+ story := &Story{Title: "Go with go-pg", AuthorId: user.Id}
+ _, err = db.Model(story).Insert()
+
+ // Query story with author
+ var result Story
+ err = db.Model(&result).
+     Relation("Author").
+     Where("story.id = ?", story.Id).
+     Select()
+```
+
+This straightforward approach lets you work with structured data and relations naturally.
+
+---
+
+## Why Should I Care?
+
+### Real User Benefits
+
+- **Boost Developer Productivity:** Eliminate repetitive SQL scaffolding while retaining full control.
+- **Build Reliable Apps:** Leverage transactions, retries, and connection management automatically.
+- **Simplify Complex Data Models:** Easily represent relationships, arrays, and composite types.
+- **Improve Performance:** Use bulk operations, prepared statements, and optimized batch queries.
+- **Adapt to PostgreSQL Features:** Access advanced database functionality without manual handling.
+
+### Common Use Cases
+
+- Backend APIs querying and managing relational data.
+- Microservices performing high-volume transactional workloads.
+- Applications requiring rich data model relations such as content management or ecommerce systems.
+- Projects needing PostgreSQL native types and extensibility.
+
+### Before and After
+
+Without go-pg, developers often write verbose, error-prone SQL interspersed with business logic, leading to maintenance burdens and bugs. With go-pg, database logic is streamlined, more testable, and idiomatic.
+
+---
+
+## Getting Started Preview
+
+### Quick Start Overview
+
+Initializing go-pg and executing your first model-based queries is straightforward:
+
+```go
+import "github.com/go-pg/pg/v10"
+
+func main() {
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    user := &User{Name: "admin", Emails: []string{"admin@example.com"}}
+    _, err := db.Model(user).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    var users []User
+    err = db.Model(&users).Select()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("Users: %+v\n", users)
+}
+```
+
+### Prerequisites
+
+- Go 1.18 or later with module support.
+- PostgreSQL server ready and accessible.
+- Basic familiarity with Go code and structs.
+
+### Next Steps
+
+- See [Installing go-pg](/getting-started/setup/installing-go-pg) for setup details.
+- Explore [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud) to master data interactions.
+- Dive into [Advanced Queries and Model Relationships](/guides/working-with-data/advanced-queries-relations) to leverage the ORM fully.
+
+---
+
+## Additional Resources
+
+- **Primary Repository:** [github.com/go-pg/pg](https://github.com/go-pg/pg)
+- **Official Documentation:** [https://pg.uptrace.dev/](https://pg.uptrace.dev/)
+- **Community Chat:** Join the Discord for support and discussion.
+- **Success Stories:** Example projects like [monetr](https://github.com/monetr/monetr) demonstrate real-world usage.
+
+---
+
+Experience the power, clarity, and productivity of go-pg today to harness the full potential of PostgreSQL in your Go applications.
