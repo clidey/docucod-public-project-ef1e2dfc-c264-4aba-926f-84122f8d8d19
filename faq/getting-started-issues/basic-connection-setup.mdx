@@ -1,0 +1,224 @@
+---
+title: "How do I properly configure and connect to my PostgreSQL server?"
+description: "Clarifies how to configure a new go-pg client, common mistakes with connection options, troubleshooting authentication or connectivity problems, and quick verification steps."
+---
+
+# How do I properly configure and connect to my PostgreSQL server?
+
+Configuring and establishing a reliable connection from your Go application to a PostgreSQL server using go-pg is the foundational step to effective database operations. This guide clarifies the essential configuration options, common pitfalls when setting connection parameters, troubleshooting authentication or network issues, and steps to verify a successful connection.
+
+---
+
+## 1. Setting Up Your go-pg Client
+
+The go-pg client requires you to instantiate it with connection options that specify how to reach your PostgreSQL server securely and efficiently. These options must correctly reflect your server address, authentication methods, and any connection pooling parameters required by your workload.
+
+### Minimum Required Options
+
+To connect, ensure these basic fields are configured:
+
+- `Addr`: The address of your PostgreSQL server in `host:port` format.
+- `User`: The database user name.
+- `Password`: The user’s password.
+- `Database`: The target database name.
+
+### Example Initialization
+
+```go
+import "github.com/go-pg/pg/v10"
+
+func NewDB() *pg.DB {
+    opts := &pg.Options{
+        Addr:     "localhost:5432",
+        User:     "youruser",
+        Password: "yourpassword",
+        Database: "yourdb",
+    }
+    db := pg.Connect(opts)
+    return db
+}
+```
+
+### Using a Connection URL
+
+Alternatively, use the `pg.ParseURL` method if you prefer to specify connection details as a URL:
+
+```go
+url := "postgres://user:password@localhost:5432/yourdb?sslmode=disable"
+opts, err := pg.ParseURL(url)
+if err != nil {
+    // handle error
+}
+db := pg.Connect(opts)
+```
+
+> Remember to adjust `sslmode` and other parameters based on your PostgreSQL server setup.
+
+---
+
+## 2. Common Connection Options and Their Effects
+
+### Pooling Parameters
+
+go-pg includes an internal connection pool to manage PostgreSQL connections efficiently. Key parameters controlling pool behavior include:
+
+- `PoolSize`: Maximum number of open connections to the database. Set based on your app concurrency needs.
+- `MinIdleConns`: Minimum number of idle connections always maintained in the pool for faster acquisition.
+- `PoolTimeout`: How long to wait for a free connection before returning an error.
+- `IdleTimeout`: How long idle connections remain before being closed.
+- `MaxConnAge`: Maximum lifetime of a connection
+
+Proper tuning of these values balances resource usage and responsiveness.
+
+### Dialer Function
+
+You can provide a custom dialer function in `Options.Dialer` to control how network connections to the database are established, including support for TLS or proxies.
+
+---
+
+## 3. Troubleshooting Connection and Authentication Issues
+
+Encountering errors during connection usually stems from misconfiguration or server-specific issues. Here are practical tips:
+
+### Common Pitfalls & Fixes
+
+- **Incorrect Address or Port**: Verify that the `Addr` matches your PostgreSQL host and listening port.
+- **Authentication Failures**:
+  - Check username and password correctness.
+  - Make sure the PostgreSQL server supports the authentication method used (e.g., MD5, SCRAM-SHA-256).
+  - The client supports TLS if your server requires it; configure TLS options accordingly.
+- **Connection Timeouts**:
+  - Increase the `PoolTimeout` to accommodate your server response times.
+  - Check network connectivity and firewall settings between your client and server.
+- **Import or Dependency Errors**:
+  - Ensure your import path includes the `/v10` suffix to get correct go-pg version.
+
+### Diagnosing with Errors
+
+When errors occur:
+- Review the error message for context.
+- Look for PostgreSQL error codes indicating authentication or network issues.
+- Use go-pg's logging or debugging flags to get detailed connection attempts.
+
+---
+
+## 4. Verifying Your Connection
+
+After configuration, verify your connection is active and credentials work by:
+
+### Step 1: Ping the Database
+
+```go
+err := db.Ping(context.Background())
+if err != nil {
+    // handle connection failure
+}
+```
+
+A successful ping confirms the connection parameters are correct and the database is reachable.
+
+### Step 2: Execute a Simple Query
+
+Run a basic query to test both connection and querying functions:
+
+```go
+type Result struct {
+    Version string
+}
+
+var result Result
+_, err = db.QueryOneContext(context.Background(), &result, "SELECT version() AS version")
+if err != nil {
+    // handle query error
+}
+fmt.Println("PostgreSQL version:", result.Version)
+```
+
+This test helps verify query execution and response parsing.
+
+---
+
+## 5. Best Practices & Tips
+
+- **Use Contexts for Cancellation:** Always use `context.Context` with your queries and connection operations to manage timeouts and cancellations cleanly.
+- **Monitor Connection Pool Stats:** Use the `Stats()` method on your DB instance to observe the health of the pool.
+- **Set Sensible Timeouts:** Avoid indefinitely waiting for a connection by configuring `PoolTimeout` and query execution timeouts.
+- **Secure Passwords:** Avoid hardcoding credentials; prefer environment variables or secure vaults.
+- **TLS Encryption:** Enable TLS settings in production environments to secure traffic between your app and the database.
+
+---
+
+## 6. Troubleshooting Checklist
+
+| Issue                             | Possible Cause                                      | Action                                                       |
+|----------------------------------|---------------------------------------------------|--------------------------------------------------------------|
+| Connection refused               | Wrong address or port                              | Verify `Addr` and network connectivity                        |
+| Authentication failed            | Wrong credentials or unsupported auth method      | Double-check username/password, server auth config            |
+| Timeout waiting for connection   | PoolSize too small or server slow                  | Increase `PoolSize` or `PoolTimeout`; check server load       |
+| TLS handshake error              | TLS misconfiguration                               | Confirm TLS settings and certificates                         |
+| Import errors                   | Import path missing `/v10` suffix                   | Adjust import path to `github.com/go-pg/pg/v10`               |
+
+---
+
+## 7. Additional Resources
+
+- [Configuration & Connecting to PostgreSQL Guide](../getting-started/setup/configuration-setup) - detailed options and examples.
+- [Installation and Configuration Guide](../../guides/getting-started/install-configure) - for setup and import instructions.
+- [Connection Pooling and Reliability](../../guides/performance-best-practices/connection-pooling) - tuning your connection pool.
+- [Error Handling & Status Codes](../../api-reference/api-fundamentals-and-best-practices/error-handling-and-status-codes) - interpret common database errors.
+
+---
+
+## Summary Diagram: Connection Setup & Pool Lifecycle
+
+```mermaid
+flowchart TD
+    subgraph "Application"
+        AppDB["go-pg DB Client"]
+    end
+    subgraph "Network"
+        Network["TCP/IP or Unix Socket"]
+    end
+    subgraph "PostgreSQL Server"
+        PGServer["PostgreSQL Server"]
+    end
+
+    AppDB -->|Open connection| Pool["Connection Pool"]
+    Pool -->|Dial| Network
+    Network --> PGServer
+    PGServer -- Response --> Network
+    Network --> Pool
+    Pool -->|Provides Conn| AppDB
+
+    click AppDB "/api-reference/core-db-interfaces/db-connection-and-configuration"
+    click Pool "/guides/performance-best-practices/connection-pooling"
+    click PGServer "https://www.postgresql.org/docs/current/libpq-connect.html"
+```
+
+This diagram illustrates your go-pg DB client managing a pool of connections dialing to the PostgreSQL server over the network.
+
+---
+
+## Summary
+
+Properly configuring and connecting go-pg to your PostgreSQL server involves understanding connection options, authentication methods, and effective use of connection pooling. This document guides you through the minimum required client setup, common mistakes in connection parameters, practical troubleshooting steps to resolve authentication or connectivity issues, and verifying your setup via a simple ping and query. Applying best practices around context usage, timeout settings, and secure credential management will ensure a stable and efficient database interaction layer.
+
+---
+
+For further mastery, explore related configuration, connection pooling, error handling, and ORM guides to fully leverage go-pg in your Go projects.
+
+---
+
+<Check>
+Ensure your connection options are complete and accurate before proceeding to advanced model definitions or query building.
+</Check>
+
+<Tip>
+When facing connection problems, first isolate network and authentication separately by confirming reachability (ping) and credentials (simple query test).
+</Tip>
+
+<Note>
+Use environment variables or external configuration management tools to keep your database credentials secure and configurable.
+</Note>
+
+---
