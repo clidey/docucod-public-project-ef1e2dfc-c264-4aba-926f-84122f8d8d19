@@ -1,0 +1,243 @@
+{
+  "background": {
+    "decoration": "gradient"
+  },
+  "colors": {
+    "dark": "#1E3A8A",
+    "light": "#60A5FA",
+    "primary": "#60A5FA"
+  },
+  "favicon": "/favicon.svg",
+  "fonts": {
+    "family": "Montserrat",
+    "format": "woff2",
+    "source": "https://fonts.gstatic.com/s/googlesansflex/v5/t5sJIQcYNIWbFgDgAAzZ34auoVyXkJCOvp3SFWJbN5hF8Ju1x6sKCyp0l9sI40swNJwGpVd4AZzz0v6lJ4qFXNZhGjLvDSkV4USKMo6qQzwliVdHAy9jxTDHg_ugnAakpwGc-cxgUqDCIUI.woff2"
+  },
+  "icons": {
+    "library": "fontawesome"
+  },
+  "logo": {
+    "dark": "./logo/logo.svg",
+    "light": "./logo/logo.svg"
+  },
+  "name": "go-pg/pg",
+  "navigation": {
+    "tabs": [
+      {
+        "groups": [
+          {
+            "group": "Product Introduction \u0026 Core Concepts",
+            "pages": [
+              "overview/product-intro-core-concepts/what-is-go-pg",
+              "overview/product-intro-core-concepts/core-concepts-terminology",
+              "overview/product-intro-core-concepts/feature-overview",
+              "overview/product-intro-core-concepts/target-audience-use-cases"
+            ]
+          },
+          {
+            "group": "Architecture \u0026 Integration",
+            "pages": [
+              "overview/architecture-integration/architecture-diagram",
+              "overview/architecture-integration/component-overview",
+              "overview/architecture-integration/integration-ecosystem"
+            ]
+          }
+        ],
+        "tab": "Overview"
+      },
+      {
+        "groups": [
+          {
+            "group": "Installation \u0026 Setup",
+            "pages": [
+              "getting-started/setup/prerequisites-system-requirements",
+              "getting-started/setup/installing-go-pg",
+              "getting-started/setup/configuration-setup"
+            ]
+          },
+          {
+            "group": "First Use \u0026 Validation",
+            "pages": [
+              "getting-started/first-use/quickstart-first-successful-query",
+              "getting-started/first-use/troubleshooting-common-setup-issues",
+              "getting-started/first-use/validation-steps"
+            ]
+          }
+        ],
+        "tab": "Getting Started"
+      },
+      {
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "guides/getting-started/install-configure",
+              "guides/getting-started/define-models-crud",
+              "guides/getting-started/quickstart-example"
+            ]
+          },
+          {
+            "group": "Working with Models \u0026 Data",
+            "pages": [
+              "guides/working-with-data/advanced-queries-relations",
+              "guides/working-with-data/arrays-jsonb-hstore",
+              "guides/working-with-data/composite-types",
+              "guides/working-with-data/soft-delete-timestamps"
+            ]
+          },
+          {
+            "group": "Application Patterns \u0026 Integrations",
+            "pages": [
+              "guides/application-patterns/transactions",
+              "guides/application-patterns/listen-notify",
+              "guides/application-patterns/schema-migrations",
+              "guides/application-patterns/ecosystem-integration"
+            ]
+          },
+          {
+            "group": "Performance \u0026 Best Practices",
+            "pages": [
+              "guides/performance-best-practices/optimizing-queries-batch",
+              "guides/performance-best-practices/connection-pooling",
+              "guides/performance-best-practices/count-estimate-pagination",
+              "guides/performance-best-practices/error-handling-ctx"
+            ]
+          }
+        ],
+        "tab": "Guides"
+      },
+      {
+        "groups": [
+          {
+            "group": "Core Database Interfaces",
+            "pages": [
+              "api-reference/core-db-interfaces/db-connection-and-configuration",
+              "api-reference/core-db-interfaces/query-interface-examples"
+            ]
+          },
+          {
+            "group": "ORM \u0026 Model Workflows",
+            "pages": [
+              "api-reference/orm-model-workflows/defining-and-using-models",
+              "api-reference/orm-model-workflows/model-relations-and-joins",
+              "api-reference/orm-model-workflows/schema-migrations-and-table-creation"
+            ]
+          },
+          {
+            "group": "Advanced Types \u0026 Query Features",
+            "pages": [
+              "api-reference/advanced-types-and-query-features/array-jsonb-and-hstore-support",
+              "api-reference/advanced-types-and-query-features/composite-and-custom-types",
+              "api-reference/advanced-types-and-query-features/query-formatting-and-parameters"
+            ]
+          },
+          {
+            "group": "API Fundamentals \u0026 Best Practices",
+            "pages": [
+              "api-reference/api-fundamentals-and-best-practices/authentication-and-security",
+              "api-reference/api-fundamentals-and-best-practices/error-handling-and-status-codes",
+              "api-reference/api-fundamentals-and-best-practices/request-response-examples-and-rate-limiting"
+            ]
+          }
+        ],
+        "tab": "API Reference"
+      },
+      {
+        "groups": [
+          {
+            "group": "Architecture Overview",
+            "pages": [
+              "concepts/architecture-overview/system-components",
+              "concepts/architecture-overview/connection-pooling",
+              "concepts/architecture-overview/extensibility-hooks"
+            ]
+          },
+          {
+            "group": "Data Models \u0026 Schema Mapping",
+            "pages": [
+              "concepts/data-models-schema/model-mapping",
+              "concepts/data-models-schema/advanced-types",
+              "concepts/data-models-schema/relations-and-orm"
+            ]
+          },
+          {
+            "group": "Performance \u0026 Scalability",
+            "pages": [
+              "concepts/performance-scalability/query-optimizations",
+              "concepts/performance-scalability/count-estimation",
+              "concepts/performance-scalability/connection-scalability"
+            ]
+          },
+          {
+            "group": "Security \u0026 Integration Concepts",
+            "pages": [
+              "concepts/security-and-integrations/safe-querying",
+              "concepts/security-and-integrations/integration-patterns"
+            ]
+          }
+        ],
+        "tab": "Concepts"
+      },
+      {
+        "groups": [
+          {
+            "group": "Release History \u0026 Highlights",
+            "pages": [
+              "changelog/release-history/versions-overview",
+              "changelog/release-history/whats-new",
+              "changelog/release-history/bug-fixes-patches"
+            ]
+          },
+          {
+            "group": "Breaking Changes \u0026 Upgrade Guides",
+            "pages": [
+              "changelog/upgrade-guides/breaking-changes",
+              "changelog/upgrade-guides/migration-notes",
+              "changelog/upgrade-guides/deprecation-notices"
+            ]
+          }
+        ],
+        "tab": "Changelog"
+      },
+      {
+        "groups": [
+          {
+            "group": "Getting Started \u0026 Common Issues",
+            "pages": [
+              "faq/getting-started-issues/installation-problems",
+              "faq/getting-started-issues/basic-connection-setup",
+              "faq/getting-started-issues/struct-mapping-questions"
+            ]
+          },
+          {
+            "group": "Troubleshooting \u0026 Advanced Error Resolution",
+            "pages": [
+              "faq/troubleshooting-runtime/query-failures",
+              "faq/troubleshooting-runtime/pooling-issues",
+              "faq/troubleshooting-runtime/integration-compatibility"
+            ]
+          },
+          {
+            "group": "Performance Optimization \u0026 Best Practices",
+            "pages": [
+              "faq/performance-optimization/best-performance-practices",
+              "faq/performance-optimization/handling-large-datasets"
+            ]
+          },
+          {
+            "group": "Community \u0026 Support Resources",
+            "pages": [
+              "faq/community-support/where-to-get-help",
+              "faq/community-support/additional-examples"
+            ]
+          }
+        ],
+        "tab": "FAQ"
+      }
+    ]
+  },
+  "styling": {
+    "codeblocks": "dark",
+    "eyebrows": "breadcrumbs"
+  }
+}
