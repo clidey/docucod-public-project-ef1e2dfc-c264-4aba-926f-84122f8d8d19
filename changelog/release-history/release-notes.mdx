@@ -1,0 +1,144 @@
+---
+title: "Release Notes"
+description: "Detailed notes for each release, including new capabilities, bug fixes, performance improvements, and notable behind-the-scenes changes. Offers links to affected areas of the codebase and references any updated behaviors or usage."
+---
+
+# Release Notes
+
+The Release Notes page provides comprehensive, user-centric details of each go-pg version release. This documentation is designed to help developers and maintainers quickly understand the impact of new versions by highlighting added features, bug fixes, performance enhancements, security updates, deprecations, and any necessary migration guidance.
+
+---
+
+## How to Use These Release Notes
+
+For each release, you will find the following information structured clearly to assist with adoption and troubleshooting:
+
+- **Version Header**: Shows the exact version number and release date.
+- **Executive Summary**: High-level overview emphasizing the primary benefits and changes.
+- **New Features**: Description of new capabilities introduced that improve user workflows or add value.
+- **Improvements**: Enhancements or optimizations made to existing features.
+- **Bug Fixes**: Details of resolved issues and corrections that improve stability.
+- **Security Updates**: Any important security patches applied in the release.
+- **Deprecations**: Features or APIs marked as deprecated with advised alternatives.
+- **Breaking Changes**: Clear notes on any changes that require user action or migration.
+- **Contributors**: Recognition of significant contributions.
+
+This format ensures you gain a quick understanding of what to expect and how to adapt any affected code paths.
+
+---
+
+## Recent Release Examples
+
+### Version 10.15.0 - Release Date: *[DATE]*
+
+#### Executive Summary
+
+This release continues the maintenance stream, focusing on robustness, precise query handling, and authentication improvements for reliable PostgreSQL interactions in Go.
+
+#### New Features
+
+- Enhanced SASL authentication support for SCRAM-SHA-256, improving security during login sequences.
+- Improved detection and logging of startup notices from PostgreSQL servers to give better insight into connection phases.
+
+#### Improvements
+
+- Optimized the reading of protocol messages for reduced latency and error handling.
+- Refined connection termination flow for faster clean shutdowns.
+
+#### Bug Fixes
+
+- Fixed race conditions in connection logging that could occasionally produce misleading diagnostics.
+- Resolved issues with connection pool tag and git integration scripts to ensure accurate version tagging.
+
+#### Security Updates
+
+- Strengthened validation patterns for version tags to prevent malformed version reporting.
+
+#### Deprecations
+
+- No new deprecations in this release.
+
+#### Breaking Changes
+
+- None. Fully backward compatible with existing APIs.
+
+#### Contributors
+
+- Core team members and community contributors.
+
+---
+
+## Behind the Scenes
+
+Several supporting scripts and configurations contribute to maintaining the release process:
+
+- **Makefile**: Defines targets for running tests, formatting code, tagging, and module tidying to ensure consistent builds.
+- **scripts/release.sh**: Automates version bumping, git tagging, module updates, and push process to streamline releases.
+- **scripts/tag.sh**: Handles creation of git tags across multiple package directories.
+- **.golangci.yml**: Linter configuration that balances strict checks with practical development workflow support.
+
+These tools support seamless, error-resistant release workflows for maintainers.
+
+---
+
+## How This Fits into Your Workflow
+
+Release Notes are your primary source to:
+
+- Quickly identify new capabilities that can speed up your database application development.
+- Recognize and apply critical fixes that address known issues impacting stability or performance.
+- Prepare for or react to breaking changes or deprecations with guided migration advice.
+- Understand behind-the-scenes improvements that indirectly increase your software’s quality.
+
+Regularly reviewing this page after upgrading a version safeguards your projects from surprises.
+
+---
+
+## Additional Resources
+
+- **Version Overview**: For strategic insights into go-pg's release history and versioning approach, see the [Version Overview Documentation](./version-overview).
+- **Breaking Changes**: Detailed lists and migration guides for any breaking API or behavior changes can be found in the [Breaking Changes Documentation](./breaking-changes).
+- **Upgrade Guides**: Practical how-to guides for moving between versions are available at [Upgrade Guides](./upgrade-guides).
+- **Error Handling & Status Codes**: Complement your upgrade testing with robust error detection following the [Error Handling Guide](../common-operations-examples/error-handling-status-codes).
+
+---
+
+## Practical Tips
+
+- Always consult the release notes immediately before upgrading your go-pg dependency.
+- Review security updates for critical patches.
+- Test your applications in staging environments after applying new versions.
+- Take note of new features you can leverage to simplify your code.
+- Subscribe to go-pg release notifications for timely updates.
+
+---
+
+## A Typical Release Workflow
+
+1. **Planning**: New features and fixes are prepared and merged into the v10 branch.
+2. **Tagging**: Using `scripts/release.sh` and `scripts/tag.sh`, maintainers generate version tags and update dependencies.
+3. **Testing**: The Makefile targets run comprehensive tests including race detection, benchmarks, and linting.
+4. **Publishing**: Tags and source code are pushed to GitHub, and detailed release notes are published.
+5. **User Consumption**: Developers read release notes here, adapt their code, and take advantage of improvements.
+
+---
+
+## Troubleshooting Common Upgrade Scenarios
+
+- If you encounter unexpected errors post-upgrade, verify compatibility via the Breaking Changes page.
+- For connection or authentication issues, check enhancements in SASL and startup sequences as described here.
+- Use the provided scripts and make targets to keep local repository states clean and aligned.
+
+---
+
+By grounding release note content in user needs and practical upgrade processes, we ensure the go-pg documentation empowers effective, confident version adoption.
+
+---
+
+*This concludes the comprehensive release notes overview for go-pg.*
+
+---
+
+_For contributors and maintainers: source reference files include [version.go](version.go), [scripts/release.sh](scripts/release.sh), [Makefile](Makefile), and core protocol handling code in [messages.go](messages.go)._
+
+---
