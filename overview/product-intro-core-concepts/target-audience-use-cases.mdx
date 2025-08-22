@@ -1,0 +1,111 @@
+---
+title: "Target Audience & Use Cases"
+description: "Discover who benefits most from go-pg—from Go backend/API developers to data engineers—along with common application scenarios such as microservices with PostgreSQL, REST/GraphQL APIs, bulk data processing, and real-time event-driven applications."
+---
+
+# Target Audience & Use Cases
+
+## Unlocking the Full Potential of go-pg: Who Benefits Most
+
+Whether you are building high-performance backend services, architecting scalable microservices with PostgreSQL, or tackling heavy data processing pipelines, go-pg is tailored to meet your needs. This page highlights the primary users and common scenarios where go-pg truly shines, helping you understand why this PostgreSQL client and ORM for Go is the right choice for your projects.
+
+---
+
+## Who Should Use go-pg?
+
+### 1. Go Backend and API Developers
+
+- **Goal**: Build efficient, reliable backend services with seamless database integration.
+- **Why go-pg?** It offers a natural and idiomatic way to model your database in Go and execute complex queries with minimal boilerplate.
+- **What they gain**: Rapid development with ORM conveniences plus the power to drop down to raw SQL when needed.
+
+### 2. Data Engineers and Backend Architects
+
+- **Goal**: Manage large data flows, perform batch operations, and orchestrate complex transactions.
+- **Why go-pg?** Robust support for bulk inserts, updates, deletes, transactions, and connection pooling ensures scalability and reliability.
+- **What they gain**: Simplified data pipelines and improved maintainability of database-heavy applications.
+
+### 3. Teams Building Microservice Architectures with PostgreSQL
+
+- **Goal**: Deliver modular services that interact efficiently with PostgreSQL.
+- **Why go-pg?** Its stable and high-performance client fits naturally into microservices, enabling strong ecosystem integration and safe query handling.
+- **What they gain**: Reduced overhead in database interaction layers and confidence in connection management.
+
+### 4. Developers Creating RESTful and GraphQL APIs
+
+- **Goal**: Serve flexible APIs backed by powerful relational models.
+- **Why go-pg?** Rich ORM relationship support (has-one, has-many, many-to-many) makes building complex data interfaces straightforward.
+- **What they gain**: Cleaner API implementations and faster development cycles.
+
+### 5. Real-Time Apps and Event-Driven Systems
+
+- **Goal**: Build applications that respond instantly to database changes.
+- **Why go-pg?** Native support for PostgreSQL notifications with `LISTEN` and `NOTIFY` enables real-time event handling.
+- **What they gain**: Simplified event architectures with tight database integration.
+
+---
+
+## Common Application Scenarios & Success Stories
+
+### Microservices with PostgreSQL Backend
+
+Microservices often require reliable, low-latency database access with clear ownership of data. go-pg facilitates this through easy-to-define models, transaction support, and connection pooling, all designed to keep services responsive and maintainable.
+
+### RESTful APIs Serving Relational Data
+
+For teams exposing PostgreSQL data through REST or GraphQL, go-pg streamlines mapping complex relationships and handling queries with minimal effort. Use cases include user management, content platforms, and organizational tools.
+
+### Bulk Data Processing & ETL Pipelines
+
+Data engineers rely on safe bulk inserts, updates, and deletes for efficient data ingestion and transformation. go-pg's batch support and timeout controls ensure that large datasets are processed reliably.
+
+### Real-Time Event-Driven Applications
+
+Applications like chat systems, live dashboards, or alerting mechanisms benefit from go-pg's integrated `LISTEN/NOTIFY` support, reducing complexity and improving reaction times.
+
+---
+
+## What Does Using go-pg Change for You?
+
+| Scenario                  | Without go-pg                           | With go-pg                                           |
+|---------------------------|---------------------------------------|-----------------------------------------------------|
+| Managing PostgreSQL in Go | Manual query building and scanning    | Idiomatic ORM and query builder simplifying the code|
+| Handling Relationships    | Multiple queries and manual joins     | Built-in relation mapping reduces development time  |
+| Transaction Management    | Boilerplate and error-prone           | Simplified transaction APIs with context support    |
+| Bulk Operations           | Complex manual implementations        | Convenient batch methods increase throughput        |
+| Scalability & Reliability | Risk of connection leaks or slow ops  | Automatic pooling with retries and circuit breakers |
+
+---
+
+## Practical Tips for Success
+
+- **Leverage ORM relations** to reduce query complexity and improve maintainability.
+- Use **context and timeout options** to ensure your queries respect time constraints and cancel appropriately.
+- Combine **bulk operations** during heavy data processing to reduce latency and resource consumption.
+- Enable **notifications** for reactive designs that need minimal polling overhead.
+- Take advantage of **connection pooling and retry mechanisms** to improve app resilience.
+
+---
+
+## Getting Started with Your Scenario
+
+No matter your background or application type, integrating go-pg into your Go projects is straightforward:
+
+1. Define your models reflecting your PostgreSQL schema.
+2. Use ORM features for CRUD, relations, and transactions.
+3. Explore sample code snippets and expanded guides tailored to your use case.
+
+For detailed how-tos, visit our [Getting Started Guides](/getting-started/setup/installing-go-pg) and [Core Concepts & Terminology](/overview/product-intro-core-concepts/core-concepts-terminology) pages.
+
+---
+
+## Related Documentation
+
+- [What is go-pg?](/overview/product-intro-core-concepts/what-is-go-pg) — Overview and core purpose
+- [Key Features at a Glance](/overview/product-intro-core-concepts/feature-overview) — Feature highlights
+- [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud) — How to start modeling your data
+- [Working with Advanced Queries and Relationships](/guides/working-with-data/advanced-queries-relations) — Deepen your expertise
+
+---
+
+Harness the power of go-pg by aligning it with your development goals and application patterns. This focused approach ensures you unlock maximum efficiency, scalability, and developer happiness while building your PostgreSQL-backed Go applications.
