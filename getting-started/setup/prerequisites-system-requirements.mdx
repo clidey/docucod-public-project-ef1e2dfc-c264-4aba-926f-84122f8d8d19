@@ -1,0 +1,231 @@
+---
+title: "Prerequisites & System Requirements"
+description: "Covers the supported Go versions, PostgreSQL requirements, and any OS/platform considerations. Ensures that users can validate their environment before installation, reducing early roadblocks."
+---
+
+# Prerequisites & System Requirements for go-pg
+
+This page outlines the essential environment and system requirements to successfully use go-pg, a PostgreSQL client and ORM for Go. By ensuring your development environment meets these requirements upfront, you reduce the risk of installation issues and runtime errors.
+
+---
+
+## 1. Supported Go Versions
+
+- **Minimum Go Version:** go-pg supports the last two major Go releases as of the current version.
+- Make sure your Go installation is up to date with modules support enabled.
+
+> The recommended approach is to use Go modules to manage dependencies cleanly:
+>
+> ```bash
+> go mod init github.com/my/repo
+> go get github.com/go-pg/pg/v10
+> ```
+>
+> This ensures compatibility and easy upgrades.
+
+---
+
+## 2. PostgreSQL Server Requirements
+
+- Compatible with PostgreSQL versions **9.0 and newer**.
+- Supports standard PostgreSQL authentication methods including:
+  - Cleartext Password
+  - MD5 Password
+  - SASL (SCRAM-SHA-256)
+- Supports SSL and TLS connections with configurable TLS options (e.g., `TLSConfig` in connection options).
+
+> go-pg expects standard PostgreSQL protocol messages and security handshakes; non-standard proxies may cause connection issues.
+
+---
+
+## 3. Operating System and Platform Considerations
+
+- Tested and supported across major OS platforms:
+  - Linux
+  - macOS
+  - Windows
+
+- No special OS-specific dependencies beyond the Go runtime and standard networking.
+- For Unix domain socket connections, use the network option `unix` and provide the socket path.
+
+---
+
+## 4. Network and Connectivity Requirements
+
+- Network access to the PostgreSQL server on port **5432** by default, unless customized.
+- Firewalls and security groups should allow TCP connections on the PostgreSQL port.
+- If using SSL/TLS, ensure proper certificate trust or configure `InsecureSkipVerify` as needed.
+
+---
+
+## 5. System Resource Recommendations
+
+- **CPU:** No strict minimum, but connection pool size defaults to `10 x number of CPU cores`.
+- **Memory:** Sufficient RAM to handle your application workload plus Go runtime memory needs.
+- Connection pooling parameters (e.g., pool size) should be tuned to fit your server and application capacity.
+
+---
+
+## 6. Environment Variables & Default Credentials
+
+If options are not explicitly configured in code, go-pg reads connection settings from the following environment variables:
+
+| Variable        | Default    |
+|-----------------|------------|
+| `PGHOST`        | localhost  |
+| `PGPORT`        | 5432       |
+| `PGUSER`        | postgres   |
+| `PGPASSWORD`    | postgres   |
+| `PGDATABASE`    | postgres   |
+
+Configure these in your shell or CI environment if defaults do not apply.
+
+---
+
+## 7. Common Dependencies
+
+- Go runtime with module support.
+- PostgreSQL server accessible with valid user credentials.
+- Optional: TLS certificates for secure connections if enabled.
+
+---
+
+## 8. Validation Before Installation
+
+To avoid common pitfalls:
+
+- Verify Go version:
+
+  ```bash
+  go version
+  ```
+
+- Check PostgreSQL version and accessibility:
+
+  ```bash
+  psql --version
+  psql -h your-host -U your-user -d your-db
+  ```
+
+- Ensure network access:
+
+  ```bash
+  telnet your-host 5432
+  ```
+
+- Validate environment variables:
+
+  ```bash
+  env | grep PG
+  ```
+
+---
+
+## 9. Best Practices and Tips
+
+- Always pin your Go module dependencies to avoid upstream breaking changes.
+- Use environment variables in production to manage secrets instead of hardcoding credentials.
+- Configure TLS parameters carefully to achieve the desired security posture.
+- Tune connection pooling options (`PoolSize`, `MinIdleConns`, `IdleTimeout`) based on your application workload and PostgreSQL server configuration.
+
+---
+
+## 10. Troubleshooting Common Setup Issues
+
+<Tip>
+If you encounter connection timeouts or authentication failures, first check your PostgreSQL server logs for errors and verify the network path and credentials.
+</Tip>
+
+<Warning>
+Using incorrect PostgreSQL version or unsupported authentication methods will cause connection failures.
+</Warning>
+
+<Note>
+Refer to the “Troubleshooting Common Setup Issues” page in this documentation for detailed diagnostic steps.
+</Note>
+
+---
+
+## 11. Quick Reference Table
+
+| Requirement                 | Recommendation / Default                      |
+|-----------------------------|----------------------------------------------|
+| Go Version                  | Latest two major versions                     |
+| PostgreSQL Version          | 9.0+                                         |
+| Default Network             | tcp                                          |
+| Default Address             | localhost:5432                               |
+| Default User               | postgres                                     |
+| Default Password            | postgres                                     |
+| Default Database            | postgres                                     |
+| Default Connection Pool Size| `10 x runtime.NumCPU()`                      |
+| Idle Connection Timeout     | 5 minutes                                    |
+| Default Dial Timeout        | 5 seconds                                    |
+
+---
+
+For detailed installation, configuration, and first-use instructions, visit the following pages:
+
+- [Installing go-pg](/getting-started/setup/installing-go-pg)
+- [Configuration & Connecting to PostgreSQL](/getting-started/setup/configuration-setup)
+- [Quickstart: Your First Successful Query](/getting-started/first-use/quickstart-first-successful-query)
+- [Troubleshooting Common Setup Issues](/getting-started/first-use/troubleshooting-common-setup-issues)
+
+---
+
+For an overview of core concepts and architecture, consult:
+
+- [What is go-pg?](/overview/product-intro-core-concepts/what-is-go-pg)
+- [Core Concepts & Terminology](/overview/product-intro-core-concepts/core-concepts-terminology)
+- [Architecture Diagram & System Components](/overview/architecture-integration/architecture-diagram)
+
+---
+
+## Sample Environment Variable Configuration
+
+```bash
+export PGHOST=localhost
+export PGPORT=5432
+export PGUSER=postgres
+export PGPASSWORD=postgres
+export PGDATABASE=postgres
+```
+
+This sets defaults that go-pg will pick up if no other options are specified.
+
+---
+
+## Example: Connecting with Explicit Options in Go
+
+```go
+import (
+    "github.com/go-pg/pg/v10"
+)
+
+func connect() *pg.DB {
+    db := pg.Connect(&pg.Options{
+        Addr:     "localhost:5432",
+        User:     "postgres",
+        Password: "postgres",
+        Database: "mydb",
+    })
+    return db
+}
+```
+
+This example assumes the prerequisites above have been met.
+
+---
+
+## Summary
+
+By following these prerequisites and system requirements, you set a solid foundation to install, configure, and run go-pg efficiently. Proper environment validation saves time and ensures a smooth development experience with PostgreSQL and Go.
+
+<Check>
+Always update your Go environment and verify PostgreSQL server accessibility before starting your go-pg project.
+</Check>
+
+---
+
+If you need further assistance, consult the official documentation or the community support channels linked in the main README and FAQ sections.
+
+---

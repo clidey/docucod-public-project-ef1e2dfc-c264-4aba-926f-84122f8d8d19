@@ -1,0 +1,245 @@
+---
+title: "Ecosystem Integration Patterns"
+description: "Best practices for integrating go-pg with related tools from the ecosystem, like big.Int support, URL struct decoding, sharding, and monitoring. Enables robust, scalable application architectures."
+---
+
+# Ecosystem Integration Patterns
+
+## Overview
+This guide helps you seamlessly integrate go-pg with complementary tools and extensions from its ecosystem to build robust, scalable, and maintainable applications. Leveraging support for big.Int types, URL struct decoding, sharding, monitoring, and more allows you to extend go-pg beyond its core features. This guide focuses on practical integration patterns that enhance application capabilities while maintaining idiomatic usage.
+
+---
+
+## 1. Integration Workflow Overview
+
+### What You Will Achieve
+- Add support for advanced numeric types like big.Int in your models.
+- Decode incoming URL parameters directly into Go structs tied to your database models.
+- Enable sharding for horizontal database scaling.
+- Integrate monitoring tools for metrics and health insights.
+
+### Prerequisites
+- A working go-pg v10 setup connected to your PostgreSQL server.
+- Basic understanding of go-pg models and query workflows (see Defining Models and Basic CRUD).
+- Familiarity with Go modules and package imports.
+
+### Estimated Time
+Approximately 20-40 minutes to set up core integrations and verify functionality.
+
+### Skill Level
+Intermediate: Requires Go knowledge and practical experience with go-pg ORM.
+
+---
+
+## 2. Step-by-Step Integration Instructions
+
+### 2.1. Adding BigInt Support
+
+By default, go-pg does not map Go's `big.Int` type. Use the [bigint](https://github.com/d-fal/bigint) extension from the ecosystem for proper PostgreSQL mapping.
+
+#### Steps:
+1. Install the bigint package:
+
+```bash
+go get github.com/d-fal/bigint
+```
+
+2. In your model struct, import and use `bigint.Int` for fields representing arbitrary precision integers:
+
+```go
+import "github.com/d-fal/bigint"
+
+type Account struct {
+    ID     int64
+    Balance bigint.Int // supports big integer values
+}
+```
+
+3. Use `db.Model(&account).Insert()` and other ORM methods as usual; bigint handles marshaling.
+
+#### Expected Outcome
+Your application can now safely store and retrieve extremely large integer values without loss.
+
+---
+
+### 2.2. Decoding URL Parameters into Structs
+
+Use [urlstruct](https://github.com/go-pg/urlstruct) to efficiently decode `url.Values` into Go structs with tags, aligning HTTP parameters with database-bound models.
+
+#### Steps:
+1. Add the urlstruct package:
+
+```bash
+go get github.com/go-pg/urlstruct
+```
+
+2. Define your struct with struct tags that match expected URL query keys:
+
+```go
+import "github.com/go-pg/urlstruct"
+
+type UserFilter struct {
+    Name  string `urlstruct:"name"`
+    Email string `urlstruct:"email"`
+}
+```
+
+3. Decode URL values into your struct:
+
+```go
+values := url.Values{"name": {"admin"}, "email": {"admin@example.com"}}
+var filter UserFilter
+err := urlstruct.Decode(&filter, values)
+if err != nil {
+    // handle error
+}
+```
+
+4. Use the populated filter struct with go-pg queries.
+
+#### Expected Outcome
+Your app cleanly maps URL query parameters to typed structs, simplifying and securing HTTP request handling with database operations.
+
+---
+
+### 2.3. Implementing Sharding
+
+Sharding allows horizontal scaling by partitioning data across multiple database instances.
+
+#### Steps:
+1. Add the go-pg sharding package:
+
+```bash
+go get github.com/go-pg/sharding
+```
+
+2. Create and configure shard managers and sharded database instances following the [go-pg/sharding](https://github.com/go-pg/sharding) documentation.
+
+3. Use shard-aware DB handles in your application logic:
+
+```go
+shardDB := sharding.NewShardClient(...)
+// Use shardDB.Model(&model).Select() etc.
+```
+
+#### Expected Outcome
+Your application transparently routes queries to the correct shard, enabling scale and data partitioning as your dataset grows.
+
+---
+
+### 2.4. Monitoring with go-pg-monitor
+
+Keep track of query performance and connection pool health using [go-pg-monitor](https://github.com/hypnoglow/go-pg-monitor), which exports metrics in Prometheus format.
+
+#### Steps:
+1. Add the monitoring package:
+
+```bash
+go get github.com/hypnoglow/go-pg-monitor
+```
+
+2. Register the monitor in your application initialization:
+
+```go
+import "github.com/hypnoglow/go-pg-monitor"
+
+monitor.Start(monitor.Options{})
+```
+
+3. Integrate the metrics endpoint with your Prometheus server or any compatible metrics pipeline.
+
+#### Expected Outcome
+Receive real-time insights into query latencies, errors, and connection pool statistics.
+
+---
+
+## 3. Best Practices and Tips
+
+- **Consistent Module Versions**: Pin versions for ecosystem packages in your `go.mod` to avoid incompatibilities.
+- **Security**: Validate and sanitize all URL-decoded inputs to prevent injection risks even though go-pg escapes SQL inputs.
+- **Shard Rebalancing**: Plan shard migrations carefully; sharding tools assist but data migrations require caution.
+- **Monitor Overhead**: Enable detailed monitoring in staging first, then tune sampling in production for optimal performance.
+
+---
+
+## 4. Common Pitfalls & Troubleshooting
+
+| Issue                               | Cause                                                      | Solution                                         |
+|-----------------------------------|------------------------------------------------------------|-------------------------------------------------|
+| bigint values fail to scan         | Missing import or wrong type in model                      | Use `bigint.Int` from ecosystem package          |
+| URL struct decoding errors         | Mismatch between URL keys and struct tags                  | Verify tags and URL query keys                    |
+| Shard queries routed incorrectly   | Shard key or mapping misconfiguration                       | Review shard manager setup and key selectors     |
+| Monitoring metrics not exposing    | Monitoring package not initialized or metrics endpoint missing | Confirm monitor setup and expose HTTP endpoint |
+
+---
+
+## 5. Next Steps & Related Content
+
+- **Explore Advanced Queries**: Use ecosystem integrations with advanced queries and relations [Advanced Queries and Model Relationships](../working-with-data/advanced-queries-relations).
+- **Schema Migrations**: Integrate ecosystem migration tools for evolving schemas safely [Schema Migrations and Tooling](../../application-patterns/schema-migrations).
+- **Connection Management**: Ensure reliable connections with connection pooling best practices [Connection Pooling and Reliability](../../performance-best-practices/connection-pooling).
+- **Soft Delete & Timestamps**: Combine with ecosystem support for record lifecycle management [Soft Deletes and Timestamps](../working-with-data/soft-delete-timestamps).
+
+---
+
+## References
+- [bigint package](https://github.com/d-fal/bigint)
+- [urlstruct package](https://github.com/go-pg/urlstruct)
+- [go-pg sharding](https://github.com/go-pg/sharding)
+- [go-pg-monitor](https://github.com/hypnoglow/go-pg-monitor)
+
+---
+
+## Example: Using BigInt and URL Struct Together
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/url"
+
+    "github.com/d-fal/bigint"
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/urlstruct"
+)
+
+type Account struct {
+    ID      int64
+    Balance bigint.Int
+}
+
+type AccountFilter struct {
+    MinBalance bigint.Int `urlstruct:"min_balance"`
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User: "postgres",
+    })
+    defer db.Close()
+
+    values := url.Values{
+        "min_balance": {"1000000000000000000000000"},
+    }
+
+    var filter AccountFilter
+    if err := urlstruct.Decode(&filter, values); err != nil {
+        panic(err)
+    }
+
+    var accounts []Account
+    err := db.Model(&accounts).
+        Where("balance >= ?", filter.MinBalance).
+        Select()
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println(accounts)
+}
+```
+
+This example demonstrates decoding a very large numeric filter from URL parameters using `urlstruct` and storing/ querying arbitrary precision balances with `bigint`.
+
+---

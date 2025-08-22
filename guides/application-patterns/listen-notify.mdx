@@ -1,0 +1,274 @@
+---
+title: "PostgreSQL Notifications with LISTEN/NOTIFY"
+description: "Demonstrates how to use go-pg to react to database events in real-time with LISTEN/NOTIFY patterns—building reactive workflows or pub/sub features in your Go applications."
+---
+
+# PostgreSQL Notifications with LISTEN/NOTIFY
+
+This guide demonstrates how to use go-pg's PostgreSQL notification support to react to database events in real-time. By leveraging the LISTEN and NOTIFY commands, you can build reactive workflows or pub/sub features directly within your Go applications using go-pg.
+
+---
+
+## Overview
+
+PostgreSQL supports asynchronous notifications using the `LISTEN` and `NOTIFY` commands. Applications can subscribe to listen on one or more channels with `LISTEN`, and PostgreSQL will push notifications on those channels via `NOTIFY`.
+
+With go-pg, you can easily integrate these notifications to receive real-time messages, enabling event-driven designs without polling the database.
+
+---
+
+## Prerequisites
+
+- A working go-pg setup with a `*pg.DB` connected to your PostgreSQL database.
+- Basic familiarity with go-pg and PostgreSQL.
+- PostgreSQL server configured to allow notifications (default behavior).
+
+---
+
+## Expected Outcome
+
+By following this guide, you will:
+
+- Establish listeners on PostgreSQL notification channels.
+- Receive and handle notifications asynchronously.
+- Use a Go channel to process notifications concurrently and reliably.
+- Understand connection lifecycle management and error handling with listeners.
+
+---
+
+## Time Estimate
+
+About 10-15 minutes for setup and initial examples.
+
+
+---
+
+## Using go-pg Listener to Receive Notifications
+
+### Step 1: Create a Listener on Channels
+
+Start by calling the `Listen` method on your go-pg `*pg.DB` instance. This returns a `*pg.Listener` that subscribes to the specified channels:
+
+```go
+ln := db.Listen(ctx, "channel_name")
+```
+
+**Expected result:** The listener establishes a dedicated connection to PostgreSQL and subscribes to the listed channels.
+
+---
+
+### Step 2: Receiving Notifications
+
+There are two main ways to receive notifications:
+
+#### A. Low-Level Blocking Receive
+Use `Receive` or `ReceiveTimeout` methods. These block until a notification arrives (or timeout):
+
+```go
+channel, payload, err := ln.Receive(ctx)
+if err != nil {
+    // handle error
+}
+fmt.Printf("Received notification on channel %q: %s\n", channel, payload)
+```
+
+`ReceiveTimeout` allows specifying a timeout duration.
+
+#### B. Using the Notification Go Channel (recommended)
+You can call `ln.Channel()` to get a Go channel that streams notifications concurrently:
+
+```go
+notifications := ln.Channel()
+
+for n := range notifications {
+    fmt.Printf("Got notification on channel %s: %s\n", n.Channel, n.Payload)
+}
+```
+
+This approach provides automatic reconnection and health checking.
+
+---
+
+### Step 3: Sending Notifications from the Database
+
+Trigger notifications by executing a `NOTIFY` SQL command with an optional payload:
+
+```go
+_, err := db.Exec("NOTIFY channel_name, ?", "payload message")
+if err != nil {
+    // handle error
+}
+```
+
+When PostgreSQL executes this, all listeners subscribed to `channel_name` receive the payload.
+
+---
+
+### Step 4: Closing the Listener
+
+When done, close the listener to cleanly release the connection:
+
+```go
+err := ln.Close()
+if err != nil {
+    // handle error
+}
+```
+
+Once closed, the listener cannot be reused.
+
+---
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "time"
+
+    "github.com/go-pg/pg/v10"
+)
+
+func main() {
+    ctx := context.Background()
+
+    db := pg.Connect(&pg.Options{
+        User:     "postgres",
+        Password: "postgres",
+        Database: "your_db",
+    })
+    defer db.Close()
+
+    // Subscribe to "events" channel
+    listener := db.Listen(ctx, "events")
+    defer listener.Close()
+
+    // Start goroutine to receive notifications
+    go func() {
+        notifications := listener.Channel()
+
+        for n := range notifications {
+            fmt.Printf("Received notification on channel %s: %s\n", n.Channel, n.Payload)
+        }
+        fmt.Println("Listener channel closed")
+    }()
+
+    // Send a notification to "events"
+    _, err := db.Exec("NOTIFY events, ?", "hello from notify")
+    if err != nil {
+        log.Fatalf("Failed NOTIFY: %v", err)
+    }
+
+    // Wait to allow notification processing
+    time.Sleep(2 * time.Second)
+}
+```
+
+**Expected output:**
+
+```
+Received notification on channel events: hello from notify
+Listener channel closed
+```
+
+---
+
+## Advanced Usage and Tips
+
+### Listening on Multiple Channels
+You can listen on multiple notification channels simultaneously:
+
+```go
+ln := db.Listen(ctx, "channel1", "channel2", "channel3")
+```
+
+### Adding More Channels Dynamically
+Use the `Listen` method on an existing listener to subscribe to additional channels:
+
+```go
+err := ln.Listen(ctx, "new_channel")
+```
+
+### Unlistening
+Stop listening on specific channels with `Unlisten`:
+
+```go
+err := ln.Unlisten(ctx, "channel1")
+```
+
+### Use Context Cancellation
+Cancel the context used in `Listen` or receiving calls to gracefully stop listening.
+
+### Automatic Connection Management
+`Listener` automatically reconnects on connection drops and sends periodic pings to ensure health.
+
+### Avoid Using Receive After Channel
+Once you start receiving from the `Channel()` method, do not call `Receive` or `ReceiveTimeout`.
+
+### Listener String Representation
+For debugging, you can use `ln.String()` to see subscribed channels.
+
+---
+
+## Troubleshooting & Common Issues
+
+### Listener Is Closed
+Error message: `pg: listener is closed`
+
+**Cause:** Listener was closed explicitly or database connection was closed.
+
+**Solution:** Instantiate a new Listener with `db.Listen`.
+
+---
+
+### Timeout Errors with ReceiveTimeout
+If `ReceiveTimeout` returns a timeout error, increase the timeout or handle it to retry.
+
+---
+
+### Connection Failures or Reconnects
+If the listener loses connection, go-pg transparently reconnects. Persistent failure suggests network or PostgreSQL issues.
+
+Check database logs and ensure the network connection is stable.
+
+---
+
+### Channel Blocking When Writing Notifications
+If the Go channel returned by `Channel()` becomes full, notifications will be dropped after a timeout to avoid deadlocks.
+
+Increase the channel buffer size via `ChannelSize(size int)` or ensure you are reading frequently enough.
+
+---
+
+## Internal Details
+
+- The Listener uses a dedicated connection from the pool.
+- It periodically sends lightweight ping notifications internally via a reserved channel `gopg:ping`.
+- Notifications are read from the PostgreSQL wire protocol asynchronously and pushed into the Go channel.
+- `Listen`, `Unlisten`, and connection management are handled with internal mutexes to allow safe concurrent usage except for calling `Channel` concurrently with manual Receive APIs.
+
+---
+
+## Next Steps
+
+- Combine notifications with ORM models to trigger updates on specific record changes.
+- Explore transactional NOTIFY usage where notifications are sent only if transactions commit.
+- Use listeners for building real-time event infrastructures such as WebSocket push notifications backed by database events.
+
+---
+
+### See Also
+
+- [go-pg Documentation](https://pg.uptrace.dev/)
+- [PostgreSQL LISTEN/NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html)
+- [go-pg DB.Listen() Example](https://pkg.go.dev/github.com/go-pg/pg/v10#DB.Listen)
+- Guides on [Defining Models and Basic CRUD](https://pg.uptrace.dev/guides/getting-started/define-models-crud)
+- [Transactions guide](https://pg.uptrace.dev/guides/application-patterns/transactions) for atomic notification triggers
+
+---
+
+**Harness go-pg's listener to power your reactive Go applications with the simplicity and robustness of PostgreSQL's native notification system.**

@@ -1,0 +1,351 @@
+---
+title: "Defining and Using Models"
+description: "Explains how to declare Go structs as database models, control field mapping, manage nullability, and leverage tags for special behaviors like arrays and hstore. Includes real-world code snippets for rapid adoption."
+---
+
+# Defining and Using Models
+
+This page explains how to define Go structs as PostgreSQL database models using go-pg ORM, control field-to-column mappings, handle nullability, and leverage special tags for arrays, hstore, and other behaviors. It includes practical examples that users can adapt quickly to build effective database-backed Go applications.
+
+---
+
+## Introduction
+
+go-pg allows you to represent PostgreSQL tables as Go structs called models. Models define table schema, constraints, and relationships through struct fields and specially formatted tags. This approach enables seamless interaction with the database via ORM methods, letting you focus on your application's logic without writing raw SQL.
+
+This documentation covers essential user needs:
+- Declaring models as Go structs
+- Mapping struct fields to columns
+- Specifying primary keys and constraints
+- Handling nullable values and zero values
+- Utilizing special tags for arrays, hstore, and composite types
+- Real-world code snippets to accelerate adoption
+
+For a guided beginning, consult the [Quickstart: Your First Successful Query](https://pg.uptrace.dev/getting-started/first-use/quickstart-first-successful-query) and [Defining Models and Basic CRUD](https://pg.uptrace.dev/guides/getting-started/define-models-crud).
+
+---
+
+## Model Declaration
+
+### Basic Struct Definition
+
+A model is a Go struct where each exported field corresponds to a database column. For example:
+
+```go
+// User defines a database model for the users table
+type User struct {
+    Id     int64    // Primary key by convention
+    Name   string   // User name
+    Emails []string // Multi-valued field stored as PostgreSQL Array
+}
+```
+
+You manage models by passing struct pointers to go-pg ORM methods.
+
+### Table Schema Creation from Models
+
+go-pg provides convenient methods to create database tables from struct definitions:
+
+```go
+err := db.Model(&User{}).CreateTable(&orm.CreateTableOptions{
+    IfNotExists: true,
+})
+if err != nil {
+    panic(err)
+}
+```
+
+This creates a users table matching the User struct.
+
+### Primary Keys
+
+By default, go-pg treats fields named `Id`, `ID`, or those tagged with `pg:",pk"` as primary keys.
+
+```go
+type User struct {
+    ID int64 `pg:",pk"`
+    Name string
+}
+```
+
+For composite primary keys, mark each relevant field with `pg:",pk"`:
+
+```go
+type ProjectDocument struct {
+    ProjectID string `pg:",pk"`
+    DocumentID string `pg:",pk"`
+}
+```
+
+### Ignoring Fields
+
+Use the tag `pg:"-"` to exclude struct fields from mapping:
+
+```go
+type User struct {
+    ID int64
+    Password string `pg:"-"`  // will not be persisted or queried
+}
+```
+
+---
+
+## Field Mapping and Tags
+
+Struct fields map to table columns by converting field names to snake_case.
+
+### Controlling Column Names
+
+Specify explicit column names with the tag `pg:"column_name"`:
+
+```go
+type User struct {
+    ID int64 `pg:"user_id,pk"`
+    CreatedAt time.Time `pg:"created_at"`
+}
+```
+
+### Nullability
+
+All fields are nullable by default: zero values map to SQL NULL.
+
+- To make columns NOT NULL, use the tag `pg:",notnull"`.
+- To allow zero values (e.g., empty string, 0) instead of NULL, use `pg:",use_zero"`.
+
+Example:
+
+```go
+type User struct {
+    ID int64 `pg:",pk"`
+    Name string `pg:",notnull"`      // must always have a value
+    Age int `pg:",use_zero"`         // stored as zero if empty
+}
+```
+
+### Arrays
+
+PostgreSQL supports multidimensional arrays. Use `pg:",array"` to map a slice field to a PostgreSQL array:
+
+```go
+type User struct {
+    Tags []string `pg:",array"`
+}
+```
+
+Optionally, specify multidimensional arrays:
+
+```go
+Colors [][]int `pg:",array"`
+```
+
+### Hstore Support
+
+For key-value string maps using PostgreSQL `hstore` type, annotate the field with `pg:",hstore"` or use the `Hstore` wrapper:
+
+```go
+import "github.com/go-pg/pg/v10"
+
+// Map[string]string as hstore
+type Event struct {
+    Metadata map[string]string `pg:",hstore"`
+}
+```
+
+### Composite Types
+
+To use PostgreSQL composite types, map nested structs as model fields. Define the composite type on the DB side and tag accordingly.
+
+Example:
+
+```go
+type Address struct {
+    Street string
+    City   string
+}
+
+type User struct {
+    ID      int64
+    Address Address // Mapped as composite type
+}
+```
+
+Refer to [Working with Composite Types](https://pg.uptrace.dev/guides/working-with-data/composite-types) for details.
+
+---
+
+## Practical Examples
+
+### Defining a User Model with Arrays and Tags
+
+```go
+package main
+
+import (
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/orm"
+    "time"
+)
+
+type User struct {
+    ID        int64      `pg:",pk"`
+    Name      string     `pg:",notnull"`
+    Emails    []string   `pg:",array"`
+    Metadata  map[string]string `pg:",hstore"`
+    CreatedAt time.Time
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    err := db.Model(&User{}).CreateTable(&orm.CreateTableOptions{IfNotExists: true})
+    if err != nil {
+        panic(err)
+    }
+
+    user := &User{
+        Name:   "John",
+        Emails: []string{"john@example.com", "john.doe@example.com"},
+        Metadata: map[string]string{"role": "admin", "team": "devops"},
+    }
+    _, err = db.Model(user).Insert()
+    if err != nil {
+        panic(err)
+    }
+}
+```
+
+### Composite Primary Keys Example
+
+```go
+type ProjectDocument struct {
+    ProjectID  string `pg:",pk"`
+    DocumentID string `pg:",pk"`
+}
+```
+
+This structure supports Go usage of composite primary keys, common in many-to-many join tables.
+
+---
+
+## Handling Relationships
+
+Model fields can define relationships with foreign keys and other models. While this page focuses on model declaration, note that adding relation tags like `pg:"rel:has-one"` or `pg:"rel:many2many"` is essential to leverage ORM querying features. For comprehensive coverage, see [Model Relations and Joins](/api-reference/orm-model-workflows/model-relations-and-joins).
+
+---
+
+## Best Practices and Tips
+
+- **Define primary keys explicitly** for clarity especially with composites.
+- **Use `pg:",notnull"` to enforce data constraints at the schema level.**
+- **Explicitly tag array fields with `pg:",array"`.**
+- **Avoid using unexported struct fields in models as they are ignored.**
+- **Use `pg:"-"` for fields that should not map to DB columns, such as computed fields or transient data.**
+- **When using pointers, be mindful that nil means SQL NULL; initialize fields properly to avoid surprises.**
+- For complex mappings, use embedding and struct tags carefully to avoid field name conflicts.
+
+---
+
+## Common Pitfalls and Troubleshooting
+
+<Tip>
+If your struct fields are not mapping as expected:
+- Confirm fields are exported (capitalized).
+- Check tags for correct syntax.
+- Use `pg:"-"` to skip unwanted fields.
+- Review zero value vs nullability behavior of your fields.
+
+If table creation or queries fail due to unknown columns, consider enabling the `discard_unknown_columns` flag or prefix problematic columns with an underscore.
+</Tip>
+
+---
+
+## Summary
+
+Defining models in go-pg is as simple as declaring Go structs and using struct tags to control behavior. This page equips you with the practical foundations to map your data efficiently, leveraging PostgreSQL's powerful types and go-pg’s ORM capabilities. To deepen your expertise, transition smoothly to related topics:
+
+- [Defining Models and Basic CRUD](https://pg.uptrace.dev/guides/getting-started/define-models-crud)
+- [Model Relations and Joins](/api-reference/orm-model-workflows/model-relations-and-joins)
+- [Advanced PostgreSQL Types](https://pg.uptrace.dev/guides/working-with-data/arrays-jsonb-hstore)
+- [Working with Composite Types](https://pg.uptrace.dev/guides/working-with-data/composite-types)
+
+This progression empowers you to define rich, performant data models that underpin robust Go applications using go-pg.
+
+---
+
+## References and Further Reading
+
+- [Go-pg ORM README and Examples](https://github.com/go-pg/pg#readme)
+- [Quickstart: Your First Successful Query](https://pg.uptrace.dev/getting-started/first-use/quickstart-first-successful-query)
+- [Defining Models and Basic CRUD](https://pg.uptrace.dev/guides/getting-started/define-models-crud)
+- [Model Relations and Joins](/api-reference/orm-model-workflows/model-relations-and-joins)
+- [Arrays, JSONB, and Hstore Support](https://pg.uptrace.dev/guides/working-with-data/arrays-jsonb-hstore)
+- [Composite Types Guide](https://pg.uptrace.dev/guides/working-with-data/composite-types)
+
+---
+
+## Example: Complex Nested Model with Relations
+
+Below is an example demonstrating nested relations with models and their structs:
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+
+    "github.com/go-pg/pg/v10"
+)
+
+type Apple struct {
+    ID    string  `json:"id"`
+    Balls []*Ball `json:"balls"`
+}
+
+type Ball struct {
+    ID      string `json:"id"`
+    AppleID string `json:"-"`
+    CatID   string `json:"-"`
+    Cat     *Cat   `json:"cat"`
+}
+
+type Cat struct {
+    ID   string  `json:"id"`
+    Dogs []*Dog  `json:"dogs"`
+}
+
+type Dog struct {
+    ID        string      `json:"id"`
+    CatID     string      `json:"-"`
+    Elephants []*Elephant `json:"elephants"`
+}
+
+type Elephant struct {
+    ID    string `json:"id"`
+    DogID string `json:"-"`
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    // Assume tables and test data are already created
+
+    var apple Apple
+    err := db.Model(&apple).Relation("Balls.Cat.Dogs.Elephants").Select()
+    if err != nil {
+        panic(err)
+    }
+
+    data, err := json.MarshalIndent(apple, "", "  ")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(string(data))
+}
+```
+
+This snippet illustrates deeply nested relation loading using go-pg's ORM.
+
+---

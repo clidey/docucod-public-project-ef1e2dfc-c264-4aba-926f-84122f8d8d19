@@ -1,0 +1,208 @@
+---
+title: "Authentication & Connection Security"
+description: "Explores supported authentication methods, connection string formats, and tips for securing PostgreSQL access with go-pg. Includes handling credentials and using encrypted connections."
+---
+
+# Authentication & Connection Security
+
+Securely connecting to your PostgreSQL database is foundational for building reliable and robust applications with go-pg. This documentation guides you through the supported authentication methods, connection string formats, and best practices to keep your database access safe while using go-pg. You will learn how to manage credentials, leverage encrypted connections via TLS, and understand how go-pg handles authentication during connection initialization.
+
+---
+
+## 1. Overview of Authentication Methods
+
+go-pg supports PostgreSQL's standard authentication protocols, enabling seamless integration with your existing database security setup. These methods get negotiated during the connection startup phase so you can connect securely and efficiently.
+
+### Supported Authentication Types:
+
+- **AuthenticationOK (No Authentication Needed)**: For connections where no password is required.
+- **Cleartext Password**: Sends the password in plain text; generally discouraged except in trusted networks.
+- **MD5 Password**: Sends a hashed password derived by concatenating the password and username, then hashing with MD5 for security over less secure networks.
+- **SASL Authentication (SCRAM-SHA-256)**: A more secure challenge-response authentication supporting SCRAM-SHA-256 as per modern PostgreSQL releases.
+
+Programs must supply credentials according to the selected method to establish a valid connection.
+
+<Tip>
+Using SASL SCRAM-SHA-256 authentication is recommended when your PostgreSQL server supports it. It provides stronger password protection compared to MD5.
+</Tip>
+
+
+## 2. Connection String & Configuration
+
+Secure connection setup starts with correctly formatting your connection details and specifying authentication credentials safely.
+
+### Connection Options
+
+You configure your connection through `pg.Options` when calling `pg.Connect()`. Key parameters relating to authentication include:
+
+- **User**: The PostgreSQL username.
+- **Password**: The associated password.
+- **Database**: Target database name.
+- **ApplicationName**: (Optional) Sets the client application name.
+- **TLSConfig**: Optional `*tls.Config` used to enable encrypted connections.
+
+
+### Example: Basic Connection Setup with Password
+
+```go
+import "github.com/go-pg/pg/v10"
+
+db := pg.Connect(&pg.Options{
+    User:     "postgres",
+    Password: "secure_password",
+    Database: "mydb",
+})
+```
+
+### Example: Connection with TLS encryption
+
+```go
+import (
+    "crypto/tls"
+    "github.com/go-pg/pg/v10"
+)
+
+// Configure TLS according to your certificate requirements
+tlsConfig := &tls.Config{
+    InsecureSkipVerify: false, // set to true only if you trust the server cert without verification
+}
+
+// Pass tlsConfig in the Connect options to enable SSL/TLS
+db := pg.Connect(&pg.Options{
+    User:     "postgres",
+    Password: "secure_password",
+    Database: "mydb",
+    TLSConfig: tlsConfig,
+})
+```
+
+<Warning>
+Avoid placing plain-text passwords directly in source code. Use environment variables or secure vaults to manage secrets.
+</Warning>
+
+
+## 3. How go-pg Handles Authentication Internally
+
+go-pg manages the authentication handshake transparently during connection startup.
+
+### Authentication Flow:
+
+1. **Startup Message**: go-pg sends a startup payload with username, database, and optional application name.
+2. **SSL Negotiation** (if TLSConfig is provided): Sends an SSL request; expects server agreement prior to TLS handshake.
+3. **Authentication Request**: The server responds with an authentication type message.
+4. **Password/Challenge Exchange**: Based on authentication method:
+   - For cleartext, go-pg sends the password directly.
+   - For MD5, it performs MD5 hashing of the password and sends the hashed value.
+   - For SASL SCRAM-SHA-256, it performs the SCRAM challenge-response protocol.
+5. **Completion**: Upon successful authentication, the server sends `AuthenticationOK` and parameter status messages.
+
+
+### Code-Level Insight:
+
+- go-pg reads the authentication type from the server message.
+- It calls the appropriate handler (`authCleartext`, `authMD5`, `authSASL`) based on the type.
+- SASL uses `mellium.im/sasl` SCRAM-SHA-256 client mechanism for secure exchange.
+
+
+## 4. Connection Pooling and Security
+
+go-pg automatically manages connection pooling, enhancing performance and resource utilization. Pool connections inherit the same security guarantees configured on initial connect.
+
+### Important Security Notes about Pool Connections:
+
+- **Credential Reuse**: All pooled connections use the original credentials and SSL setup.
+- **Connection Aging and Reaping**: Idle or stale connections can be removed to reduce risk from prolonged connections.
+- **TLS Wrapping**: After SSL negotiation, connections are wrapped in TLS automatically, ensuring encrypted communication.
+
+
+## 5. Best Practices for Securing PostgreSQL Connections
+
+To optimize security when using go-pg, follow these actionable guidelines:
+
+- Use **TLS encryption** (`TLSConfig`) whenever possible to avoid credentials being sent over the network in cleartext.
+- For password authentication, prefer **SCRAM-SHA-256** over MD5 or cleartext, upgrading your PostgreSQL server if needed.
+- Never hardcode sensitive credentials; use environment variables or secret management tools.
+- Limit the **pool size** and enable **IdleTimeout** to avoid reuse of stale or compromised connections.
+- Monitor and log authentication failures to detect suspicious activity.
+- Configure PostgreSQL server-side authentication rules to restrict login access by IP or role.
+
+
+## 6. Example Walkthrough: Creating a Secure Connection
+
+Let's build a connection with TLS and SCRAM authentication, providing step-by-step success criteria.
+
+<Steps>
+<Step title="Step 1: Prepare TLS Configuration">
+Configure TLS with certificate verification:
+
+```go
+tlsConfig := &tls.Config{
+    MinVersion: tls.VersionTLS12,
+    // Load CA root certs if needed
+}
+```
+</Step>
+<Step title="Step 2: Create DB Client with Credentials and TLS">
+
+```go
+db := pg.Connect(&pg.Options{
+    User:     "dbuser",
+    Password: "strongpassword",
+    Database: "mydatabase",
+    TLSConfig: tlsConfig,
+})
+```
+</Step>
+<Step title="Step 3: Verify Connection & Authentication">
+Ping the database to ensure everything works:
+
+```go
+if err := db.Ping(context.Background()); err != nil {
+    log.Fatalf("Failed to connect/authenticate: %v", err)
+}
+log.Println("Connection successful with secure authentication")
+```
+</Step>
+</Steps>
+
+
+## 7. Troubleshooting Authentication Issues
+
+Some common problems and their resolutions include:
+
+<AccordionGroup title="Authentication Troubleshooting">
+<Accordion title="Incorrect Credentials">
+Check your username and password carefully. Confirm your PostgreSQL user exists and has access to the database.
+</Accordion>
+<Accordion title="Unsupported Authentication Method">
+If the server requires a method not supported by your version of go-pg or PostgreSQL (e.g., SCRAM on old client), upgrade your client or PostgreSQL.
+</Accordion>
+<Accordion title="Server Rejecting TLS Connection">
+Verify the server is configured to accept SSL connections. If it doesn't, `enableSSL` will fail, and you'll get an error like `SSL is not enabled on the server`.
+</Accordion>
+<Accordion title="Network or Firewall Issues">
+Ensure your client machine can reach the PostgreSQL server on the correct port and no firewalls block traffic.
+</Accordion>
+<Accordion title="Pool Exhaustion or Timeout">
+Configure connection pool options to mitigate timeout errors. See the Connection Pooling guide for adjusting `PoolSize` and `PoolTimeout`.
+</Accordion>
+</AccordionGroup>
+
+
+## 8. Additional Security Considerations
+
+- Employ PostgreSQL's native **role-based access control (RBAC)** in combination with go-pg authentication settings.
+- Consider integrating external authentication, such as via `pg_hba.conf`, for LDAP or certificate-based logins.
+- Use **application-level encryption** for sensitive data beyond transport security.
+
+
+## Related Documentation & Next Steps
+
+- [DB Connection & Configuration](../core-db-interfaces/db-connection-and-configuration) — Deep dive into connection setup and pooling options.
+- [Connection Pooling and Reliability Guide](../../guides/performance-best-practices/connection-pooling) — Best practices to manage connection pools securely and efficiently.
+- [Error Handling & Status Codes](../api-fundamentals-and-best-practices/error-handling-and-status-codes) — Guidance on interpreting authentication and connection errors.
+- [Configuration & Connecting to PostgreSQL](../../getting-started/setup/configuration-setup) — Step-by-step connection setup including secure credential management.
+
+---
+
+By following this documentation, you ensure your application's database connection starts off securely and stays resilient with best authentication practices and encrypted communication using go-pg.

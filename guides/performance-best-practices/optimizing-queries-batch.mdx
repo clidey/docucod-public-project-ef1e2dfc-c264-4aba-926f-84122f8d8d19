@@ -1,0 +1,284 @@
+---
+title: "Optimizing Queries and Batch Operations"
+description: "Learn how to use bulk inserts, updates, and deletes for maximum throughput. Includes advice on reducing round-trips, using common table expressions, and minimizing query cost."
+---
+
+# Optimizing Queries and Batch Operations
+
+## Workflow Overview
+
+### Task Description
+This guide teaches you how to optimize database interactions in go-pg by using bulk inserts, updates, and deletes. By batching operations and leveraging SQL features like Common Table Expressions (CTEs) and upsert strategies, you reduce network round-trips and improve throughput.
+
+### Prerequisites
+- A working go-pg v10 setup connected to a PostgreSQL database.
+- Basic understanding of go-pg ORM and Go structs mapping to tables.
+- Familiarity with Go programming and SQL fundamentals.
+
+### Expected Outcome
+- Ability to perform efficient bulk inserts, updates, and deletes with go-pg.
+- Know-how to write queries that minimize database overhead and round-trips.
+- Understand the use of `ON CONFLICT` clauses for upsert scenarios.
+- Leverage CTEs to simplify complex batch operations.
+
+### Time Estimate
+Approximately 30-45 minutes to complete and fully understand examples.
+
+### Difficulty Level
+Intermediate—requires some knowledge of go-pg ORM and SQL batch operations.
+
+---
+
+## Step-by-Step Instructions
+
+### 1. Preparing Bulk Inserts
+Bulk inserts dramatically improve the speed of inserting many records by combining multiple rows into one SQL statement.
+
+#### How to Bulk Insert
+- Use `db.Model(&slice).Insert()` where `slice` is a slice of structs representing your records.
+- go-pg generates a single `INSERT INTO` statement with multiple `VALUES` tuples.
+
+```go
+users := []User{
+    {Name: "Alice"},
+    {Name: "Bob"},
+    {Name: "Charlie"},
+}
+
+_, err := db.Model(&users).Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+##### Expected Result
+- One `INSERT INTO users` statement inserting all three users.
+
+##### Verification
+- Confirm no errors and the slice entries have primary keys assigned after insertion.
+
+#### Tips
+- Avoid bulk inserting an empty slice; it causes an error.
+- Zero-value fields default to SQL `DEFAULT` unless tagged with `pg:",use_zero"`.
+
+
+### 2. Optimizing Bulk Updates
+Bulk updates reduce overhead compared to updating rows individually by using a single `UPDATE` statement with a `FROM (VALUES ...)` clause.
+
+#### How to Bulk Update
+- Prepare a slice of structs with primary keys and updated data.
+- Call `db.Model(&slice).Update()`.
+
+Example:
+
+```go
+type User struct {
+    Id   int64
+    Name string
+}
+
+users := []User{
+    {Id: 1, Name: "Alice Updated"},
+    {Id: 2, Name: "Bob Updated"},
+}
+
+_, err := db.Model(&users).Column("name").Update()
+if err != nil {
+    panic(err)
+}
+```
+
+##### Explanation
+- go-pg generates an `UPDATE` with `FROM (VALUES ...) AS _data` where `_data` contains the new values.
+- The update matches on primary keys for each record.
+
+##### Verification
+- Check that all records were updated correctly in the database.
+
+#### Best Practices
+- Specify columns selectively (e.g., `.Column("name")`) to update only intended fields.
+- Use the `pg:",use_zero"` struct tag when zero values should be treated as valid updates.
+
+
+### 3. Performing Bulk Deletes
+Bulk deletes similarly reduce multiple delete statements into a single invocation.
+
+#### How to Bulk Delete
+- Provide a slice of structs or primary keys to delete.
+- Call `db.Model(&slice).WherePK().Delete()` or define a custom condition.
+
+Example:
+
+```go
+ids := []int64{1, 2, 3}
+
+deleted, err := db.Model(&User{}).Where("id IN (?)", ids).Delete()
+if err != nil {
+    panic(err)
+}
+
+fmt.Printf("Deleted %d records\n", deleted)
+```
+
+##### Verification
+- Verify those rows no longer exist.
+
+#### Important Notes
+- Without specifying `Where`, bulk delete by primary keys requires careful use to avoid deleting unintended rows.
+
+
+### 4. Using `ON CONFLICT` for Upserts
+Leverage Postgres’ `INSERT ... ON CONFLICT` to perform insert-or-update operations.
+
+#### Syntax in go-pg
+Use the `OnConflict` and `Set` methods on the query builder.
+
+Example:
+
+```go
+user := &User{Id: 1, Name: "Updated Name"}
+_, err := db.Model(user).
+    OnConflict("(id) DO UPDATE").
+    Set("name = EXCLUDED.name").
+    Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+##### Explanation
+- Inserts user if not exists.
+- Updates the `name` field if a conflict on `id` occurs.
+
+#### Use Cases
+- Helpful in synchronization tasks where data may already exist.
+
+---
+
+### 5. Reducing Round-Trips with Common Table Expressions (CTEs)
+Complex batch operations benefit from wrapping subqueries in CTEs to minimize interaction overhead.
+
+#### How to Use CTEs in go-pg
+- Use `WrapWith(name)` and `Table(name)` to define and consume CTEs.
+
+Example:
+
+```go
+subq := db.Model(&User{}).Where("active = TRUE")
+
+q := db.Model().
+    WrapWith("active_users").
+    Table("active_users").
+    With("active_users", subq).  // defining the CTE
+    Where("name LIKE ?", "%john%")
+
+var result []User
+err := q.Select(&result)
+if err != nil {
+    panic(err)
+}
+```
+
+##### Explanation
+- `active_users` CTE filters active users once.
+- Outer query can reuse the filtered set minimizing re-execution.
+
+#### Benefits
+- Improves clarity and performance in multi-step queries.
+
+
+## Examples & Code Samples
+
+### Bulk Insert Example
+```go
+users := []User{
+    {Name: "Alice"},
+    {Name: "Bob"},
+    {Name: "Charlie"},
+}
+_, err := db.Model(&users).Insert()
+```
+Expected SQL:
+```sql
+INSERT INTO "users" ("name") VALUES ('Alice'), ('Bob'), ('Charlie')
+RETURNING "id", "name"
+```
+
+### Upsert with `ON CONFLICT`
+```go
+user := &User{Id: 1, Name: "Updated Alice"}
+_, err := db.Model(user).
+    OnConflict("(id) DO UPDATE").
+    Set("name = EXCLUDED.name").
+    Insert()
+```
+Expected SQL:
+```sql
+INSERT INTO "users" ("id", "name") VALUES (1, 'Updated Alice')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+RETURNING "id", "name"
+```
+
+### Bulk Update Example
+```go
+users := []User{
+    {Id: 1, Name: "Alice2"},
+    {Id: 2, Name: "Bob2"},
+}
+_, err := db.Model(&users).Column("name").Update()
+```
+Expected SQL involves `UPDATE ... FROM (VALUES ... ) AS _data`
+
+### Bulk Delete Example
+```go
+ids := []int64{1, 2, 3}
+_, err := db.Model(&User{}).Where("id IN (?)", ids).Delete()
+```
+
+## Troubleshooting & Tips
+
+### Common Issues
+- **Empty slice bulk operations:** Attempting to bulk insert or update an empty slice returns an error. Always ensure slices have data before calling.
+- **Conflict resolution errors:** Missing or incorrect `OnConflict` clause leads to unexpected insert failures due to key violations.
+- **Soft deletes interference:** Make sure soft delete filters are accounted for when bulk updating or deleting.
+
+### Best Practices
+- Use explicit `Column()` calls to limit update and insert fields to relevant columns.
+- Combine bulk operations with transactions when consistency matters.
+- Avoid mixing bulk methods with large individual queries to optimize throughput.
+
+### Performance Considerations
+- Bulk operations dramatically reduce network round-trips compared to looped single-row queries.
+- Using CTEs helps chain queries and reduce database parsing overhead.
+- Prepared statements with bulk batches further improve performance when used repeatedly.
+
+### Alternative Approaches
+- For extremely large batch loads, consider using the PostgreSQL `COPY` command (`db.CopyFrom`) for faster bulk data loads.
+- Use explicit SQL queries if you need complex batch conditions not easily supported by ORM.
+
+## Next Steps & Related Content
+
+- Explore [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud) to master core ORM operations.
+- Learn about [Advanced Queries and Model Relationships](/guides/working-with-data/advanced-queries-relations) to efficiently fetch related data.
+- Deepen understanding of [Managing Transactions](/guides/application-patterns/transactions) to ensure data integrity.
+- For large data ingestion, study [Using COPY for Bulk Loads] in the [Core Database Interfaces](/api-reference/core-db-interfaces/db-connection-and-configuration).
+
+------
+
+<CardGroup cols={2}>
+<Card title="Bulk Insert Example">
+```go
+users := []User{{Name: "Alice"}, {Name: "Bob"}}
+_, err := db.Model(&users).Insert()
+if err != nil { panic(err) }
+```
+</Card>
+<Card title="Upsert with ON CONFLICT">
+```go
+_, err := db.Model(&User{Id:1, Name:"Updated"}).
+    OnConflict("(id) DO UPDATE").
+    Set("name = EXCLUDED.name").
+    Insert()
+```
+</Card>
+</CardGroup>

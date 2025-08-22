@@ -1,0 +1,214 @@
+---
+title: "Configuration & Connecting to PostgreSQL"
+description: "Guides users through basic configuration: establishing a database connection, describing minimal required options, and sample connection code. Includes pointers for managing credentials and basic error handling."
+---
+
+# Configuration & Connecting to PostgreSQL
+
+This guide walks you through the essential steps to configure go-pg and establish a connection to your PostgreSQL database. We cover the minimal required options, how to handle credentials securely, and provide practical sample code. This setup is the foundation for executing queries and leveraging go-pg's ORM features.
+
+---
+
+## 1. Understanding Connection Options
+
+Before connecting to PostgreSQL, you should be familiar with the key options go-pg requires:
+
+- **User**: PostgreSQL username.
+- **Password**: Corresponding password for the user.
+- **Database**: Name of the target database.
+- **Addr** (optional): Host and port of the PostgreSQL server (default is `localhost:5432`).
+- **ApplicationName** (optional): Identifier for your client application.
+- **TLSConfig** (optional): TLS configuration for secure connections.
+
+### Minimal Required Options
+
+At a minimum, you must provide `User` and `Password`. If you don't specify an `Addr`, the client defaults to connecting on `localhost:5432`, and if `Database` is omitted, go-pg connects to your user's default DB.
+
+<Tip>
+Always supply explicit connection details for reliable, predictable behavior, especially in production environments.
+</Tip>
+
+---
+
+## 2. Establishing a Connection
+
+Use the `pg.Connect` method with an `Options` struct. Here’s the simplest example:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/go-pg/pg/v10"
+)
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User:     "postgres",
+		Password: "postgres",
+		Database: "mydb",
+	})
+	defer db.Close()
+
+	// Verify the connection
+	var n int
+	_, err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Connection successful, query result:", n)
+}
+```
+
+### Explanation of the code:
+- `pg.Connect(&pg.Options{...})` creates and returns a new database client.
+- `db.Close()` ensures connections are cleanly closed when the program ends.
+- A simple `SELECT 1` query confirms the connection is live.
+
+<Check>
+You should see output: `Connection successful, query result: 1`
+</Check>
+
+---
+
+## 3. Managing Credentials Securely
+
+Hardcoding passwords in source code is risky. Follow these best practices:
+
+- Use environment variables for sensitive data. For example:
+
+  ```go
+  db := pg.Connect(&pg.Options{
+      User:     os.Getenv("PG_USER"),
+      Password: os.Getenv("PG_PASSWORD"),
+      Database: os.Getenv("PG_DATABASE"),
+      Addr:     os.Getenv("PG_ADDR"), // optional
+  })
+  ```
+
+- Consider using secret management services or encrypted configuration files.
+
+- Restrict database user permissions to only those necessary for your app.
+
+<Warning>
+Never commit passwords or secrets to version control repositories.
+</Warning>
+
+---
+
+## 4. Handling Connection Errors
+
+Always handle errors returned by methods to detect misconfiguration or connectivity problems early.
+
+Example error handling:
+
+```go
+_, err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+if err != nil {
+	panic(fmt.Errorf("db connection failed: %w", err))
+}
+```
+
+### Common Issues
+
+- **Authentication failures** usually indicate wrong username or password.
+- **Connection refused** suggests server not reachable or firewall blocking the port.
+- **Timeouts** can occur if the database is under heavy load or network is slow.
+
+<Tip>
+Run `psql` with the same credentials to verify manual connection before using go-pg.
+</Tip>
+
+---
+
+## 5. Sample Connection With Full Options
+
+This example demonstrates configuring a full set of options, including host, port, and application name:
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/go-pg/pg/v10"
+)
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User:            "myuser",
+		Password:        "mypassword",
+		Database:        "mydatabase",
+		Addr:            "db.example.com:5432",
+		ApplicationName: "my-go-pg-app",
+	})
+	defer db.Close()
+
+	// Test query
+	var now string
+	_, err := db.QueryOne(pg.Scan(&now), "SELECT now()::text")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Current database time:", now)
+}
+```
+
+---
+
+## 6. Next Steps After Connecting
+
+Once connected, you can:
+
+- Define Go structs as models mapping to your database tables.
+- Perform queries using ORM methods like `db.Model(&model).Select()` or execute raw SQL.
+- Use transactions to group related operations.
+- Handle complex relations and joins using ORM features.
+
+For detailed tutorials, see:
+
+- [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud)
+- [Quickstart: Your First Successful Query](/getting-started/first-use/quickstart-first-successful-query)
+
+---
+
+## 7. Troubleshooting Connection Issues
+
+<AccordionGroup title="Common Connection Problems and Solutions">
+<Accordion title="Authentication Failed">
+Check your username and password correctness. Use `psql` or another client to verify credentials directly.
+</Accordion>
+<Accordion title="Connection Refused or Timeout">
+Verify the database server is running and listening on the specified host and port. Check firewall or network rules that may block traffic.
+</Accordion>
+<Accordion title="TLS or SSL Errors">
+If your server requires TLS, configure `TLSConfig` in `pg.Options` appropriately. Refer to the PostgreSQL server configuration.
+</Accordion>
+<Accordion title="Incorrect Database Name">
+Confirm that the specified database exists and the user has permission to connect.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## 8. Summary
+
+You have learned how to configure go-pg to connect to a PostgreSQL server with minimal and advanced options, manage credentials securely, handle errors, and verify your connection. With this setup, you can confidently proceed to build your app using go-pg’s full ORM capabilities.
+
+---
+
+## References
+
+- [go-pg Installation & Setup - Prerequisites & System Requirements](/getting-started/setup/prerequisites-system-requirements)
+- [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud)
+- [Quickstart: Your First Successful Query](/getting-started/first-use/quickstart-first-successful-query)
+
+---
+
+## Additional Tips
+
+- Wrap your connection and initialization logic in reusable functions to simplify application code.
+- Use `defer db.Close()` to ensure connection pool resources are freed automatically.
+- Explore go-pg options for connection pooling, logging, and hooks to optimize your usage.
+
+---

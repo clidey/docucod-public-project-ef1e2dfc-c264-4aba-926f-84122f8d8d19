@@ -1,0 +1,159 @@
+---
+title: "How should I handle large result sets or complex queries with go-pg?"
+description: "Discusses memory-efficient techniques like streaming rows, partial selects, FOR EACH iteration, and handling large/batch operations safely. Provides tips for scaling ORM usage."
+---
+
+# How should I handle large result sets or complex queries with go-pg?
+
+When working with large datasets or complex queries in go-pg, you want to ensure your application remains responsive and efficient without exhausting memory or causing timeouts. This page walks you through proven, memory-efficient techniques for handling large result sets and scaling ORM usage safely with go-pg.
+
+---
+
+## Frequently Asked Questions
+
+### What are the best approaches to query large result sets efficiently?
+
+- Use the `ForEach` method to iterate over query results one row at a time, avoiding loading the entire dataset into memory.
+- Stream rows by combining raw queries with scanning per row.
+- Consider partial selects and limiting columns to only what's necessary.
+- Use batch or bulk operations for inserts, updates, and deletes to reduce round-trips.
+
+### How does `ForEach` improve memory usage?
+
+`ForEach` executes a query and calls a function for each returned row sequentially. This streaming behavior prevents loading all rows into a slice, significantly lowering memory consumption especially with very large datasets.
+
+### Can I use `ForEach` with complex joins or model relations?
+
+Yes. `ForEach` works with model queries including relations, but use it mindfully to stream large datasets and avoid eager loading large nested collections all at once.
+
+### How do I safely batch insert or update large batches?
+
+Go-pg supports bulk insert, update, and delete operations which group multiple rows into fewer SQL statements returning combined results. Ensure you respect transaction boundaries and PostgreSQL limits.
+
+### How can I fetch only specific columns to reduce data transfer?
+
+Use `.Column()` or `.ColumnExpr()` in ORM queries to fetch a subset of columns. This lowers the amount of data sent over the wire and processed in your app.
+
+### Does go-pg offer query streaming or cursors?
+
+There is no explicit cursor API but `ForEach` provides an effective streaming alternative. For very complex streaming needs, raw query access and manual row-by-row processing are possible.
+
+
+---
+
+## Practical Techniques & Examples
+
+### Using `ForEach` for streaming large datasets
+
+```go
+var count int
+err := db.Model((*YourModel)(nil)).
+    Where("your_conditions = ?", value).
+    ForEach(func(m *YourModel) error {
+        // Process row `m` here
+        count++
+        return nil
+    })
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Processed %d rows\n", count)
+```
+
+This pattern ensures only a single row is loaded at a time.
+
+---
+
+### Partial Selects: Limit selected columns
+
+```go
+var users []User
+err := db.Model(&users).
+    Column("id", "name").
+    Where("active = ?", true).
+    Select()
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+This reduces excess data retrieval and improves query speed.
+
+---
+
+### Batch Operations for Large Inserts/Updates
+
+```go
+users := make([]*User, 0, 1000)
+for i := 0; i < 1000; i++ {
+    users = append(users, &User{Name: fmt.Sprintf("user%d", i)})
+}
+
+_, err := db.Model(&users).Insert()
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+This inserts many rows efficiently in one operation.
+
+---
+
+### Example benchmarking different query loading methods
+
+The official benchmarks demonstrate memory and speed trade-offs:
+
+- `db.Query()` with slices loads entire results
+- `db.Model().Select()` with ORM
+- `db.Model().ForEach()` streams rows with lower memory
+
+Refer to the [bench_test.go source](https://github.com/go-pg/pg/blob/main/bench_test.go) for detailed usage.
+
+---
+
+## Tips for Scaling ORM Usage
+
+- Use prepared statements to reuse query plans and reduce parsing overhead.
+- Limit fetched rows with `.Limit()` and use pagination where appropriate.
+- When loading relations, use joins or preloading wisely to control the data volume.
+- Monitor your PostgreSQL server and client connection pool to avoid saturation.
+- Use context and query timeouts to prevent long-running queries from blocking resources.
+
+---
+
+## Common Pitfalls
+
+- Avoid loading millions of rows directly into slices — switch to streaming with `ForEach`.
+- Beware of eager-loading massive related collections that may blow up memory.
+- Do not mix large batch operations without adequate transaction management.
+- Watch out for timeouts on slow queries and set appropriate `.WithTimeout()` values.
+
+---
+
+## Troubleshooting Large Query Handling Issues
+
+**Problem:** Queries cause high memory usage or application slowdowns.
+
+**Solution:** Switch to `ForEach` iteration, reduce selected columns, add filters or pagination.
+
+**Problem:** Batch inserts fail due to exceeding limits.
+
+**Solution:** Break batches into smaller chunks and retry; monitor transaction sizes.
+
+**Problem:** Timeouts occur on complex or long-running queries.
+
+**Solution:** Increase query timeouts via `.WithTimeout()` or optimize queries and indices.
+
+---
+
+## Additional Resources
+
+- [Optimizing Queries and Batch Operations Guide](/guides/performance-best-practices/optimizing-queries-batch)
+- [ForEach Method Documentation](https://pkg.go.dev/github.com/go-pg/pg/v10#DB.Model.ForEach)
+- [Connection Pooling and Reliability](/guides/performance-best-practices/connection-pooling)
+- [Count Estimate for Pagination](/guides/performance-best-practices/count-estimate-pagination)
+- [Example Benchmark Code](https://github.com/go-pg/pg/blob/main/bench_test.go)
+
+---
+
+For best results, pair these techniques with sound database design, indexing, and monitoring strategies to build scalable, high-throughput Go services backed by PostgreSQL using go-pg.

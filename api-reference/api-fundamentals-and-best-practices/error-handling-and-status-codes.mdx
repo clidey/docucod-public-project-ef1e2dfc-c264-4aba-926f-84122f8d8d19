@@ -1,0 +1,286 @@
+---
+title: "Error Handling & Status Codes"
+description: "Summarizes key error types, common status codes, and structured error response handling when interacting with the database. Provides examples for network, query, and validation errors."
+---
+
+# Error Handling & Status Codes
+
+This page provides a clear and actionable overview of how to handle errors and interpret status codes when working with go-pg, a high-performance PostgreSQL client and ORM for Go. Understanding these error types, common codes, and patterns will help you diagnose issues quickly and write resilient applications.
+
+---
+
+## 1. Overview of Error Types
+
+When interacting with PostgreSQL through go-pg, errors can occur for a variety of reasons, ranging from network failures to SQL constraint violations. Here's a high-level classification:
+
+- **No Rows Found (`ErrNoRows`)**: Returned when a query expecting a single row finds none.
+- **Multiple Rows Found (`ErrMultiRows`)**: Returned when a query expecting a single row finds more than one.
+- **PostgreSQL Server Errors (`pg.Error`)**: Structured errors returned by the database including detailed error codes.
+- **Network Errors**: Errors arising due to connection issues or timeouts.
+- **Context Cancellation**: Query cancellations or deadlines exceeded via `context.Context`.
+
+Understanding these categories allows you to apply correct error handling strategies.
+
+
+## 2. Key Error Constants
+
+The following are predefined error values you will commonly encounter:
+
+| Error Constant   | Description                                                      |
+|-----------------|------------------------------------------------------------------|
+| `ErrNoRows`     | No rows returned where at least one was expected.                |
+| `ErrMultiRows`  | Multiple rows returned where exactly one was expected.           |
+
+```go
+var (
+    ErrNoRows   = internal.ErrNoRows
+    ErrMultiRows = internal.ErrMultiRows
+)
+```
+
+Use these constants to validate your query results especially with methods like `QueryOne` or `ExecOne`.
+
+
+## 3. Handling PostgreSQL Errors (`pg.Error`)
+
+PostgreSQL returns errors with rich information structured through error fields. go-pg exposes this via the `pg.Error` interface, which includes:
+
+- Access to error details through the `Field(field byte) string` method.
+- A convenience method `IntegrityViolation()` to detect constraint violations.
+
+### Typical Usage
+
+```go
+if err != nil {
+    if pgErr, ok := err.(pg.Error); ok {
+        if pgErr.IntegrityViolation() {
+            fmt.Println("Integrity constraint violation occurred:", err)
+        } else if pgErr.Field('S') == "PANIC" {
+            panic(err)
+        } else {
+            // Handle other PostgreSQL errors
+        }
+    } else {
+        // Handle non-PostgreSQL errors
+    }
+}
+```
+
+### Common Integrity Violation Codes
+
+These mapped codes signal integrity constraint violations:
+
+| PostgreSQL Code | Meaning                            |
+|-----------------|----------------------------------|
+| `23000`         | Integrity constraint violation    |
+| `23502`         | Not null violation                |
+| `23503`         | Foreign key violation             |
+| `23505`         | Unique violation                  |
+| `23514`         | Check violation                  |
+
+
+## 4. Detecting Network and Fatal Errors
+
+go-pg differentiates between recoverable and fatal errors to intelligently retry queries or close connections. Some fatal error fields include:
+
+- Severity level (`'V'` field) of `FATAL` or `PANIC`
+- PostgreSQL error codes like `25P02` (transaction aborted) or `57014` (statement canceled)
+
+Timeouts implementing Go's `net.Error` interface with `Timeout()` returning true are also considered.
+
+You can check this internally with `isBadConn(err error, allowTimeout bool) (bool, string)` which is helpful for connection pool and retry logic.
+
+
+## 5. Status Codes and Their Meaning
+
+Understanding PostgreSQL server error codes helps precisely catch and handle issues.
+
+| Code  | Description                                    |
+|--------|----------------------------------------------|
+| `ERR_NO_ROWS` (go-pg ErrNoRows) | No rows returned in expected single row query |
+| `ERR_MULTI_ROWS` (go-pg ErrMultiRows) | Multiple rows returned in expected single row query |
+| `23505` | Unique constraint violation                     |
+| `23503` | Foreign key violation                           |
+| `57014` | Query canceled (statement canceled by user)   |
+
+
+## 6. Common Error Handling Patterns
+
+### 6.1 Checking for No Rows
+
+Use `ErrNoRows` in scenarios where zero results are acceptable or should be handled gracefully.
+
+```go
+var user User
+_, err := db.QueryOne(&user, "SELECT * FROM users WHERE id = ?", id)
+if err == pg.ErrNoRows {
+    // handle no user found
+} else if err != nil {
+    // handle other errors
+}
+```
+
+### 6.2 Ensuring Single Row Returned
+
+Methods like `ExecOne` and `QueryOne` guarantee this. If multiple rows are returned, `ErrMultiRows` is returned.
+
+### 6.3 Identifying Integrity Constraint Violations
+
+Useful for upserts or handling conflicts gracefully.
+
+```go
+_, err := db.Model(user).Insert()
+if err != nil {
+    if pgErr, ok := err.(pg.Error); ok && pgErr.IntegrityViolation() {
+        fmt.Println("Conflict or constraint violation:", err)
+    } else {
+        // other errors
+    }
+}
+```
+
+### 6.4 Handling Context Cancellations
+
+Queries that honor `context.Context` allow cancellation and timeouts.
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+defer cancel()
+
+_, err := db.QueryOneContext(ctx, &user, "SELECT * FROM users WHERE id = ?", id)
+if errors.Is(err, context.DeadlineExceeded) {
+    fmt.Println("Query timed out")
+}
+```
+
+
+## 7. Practical Examples
+
+### Example 1: Detecting No Rows Returned
+
+```go
+var count int
+_, err := db.QueryOne(pg.Scan(&count), "SELECT count(*) FROM users WHERE active = true")
+if err == pg.ErrNoRows {
+    fmt.Println("No active users found")
+} else if err != nil {
+    panic(err)
+} else {
+    fmt.Println("Active users count:", count)
+}
+```
+
+### Example 2: Handling Duplicate Key Error
+
+```go
+user := &User{Name: "admin"}
+_, err := db.Model(user).Insert()
+if err != nil {
+    if pgErr, ok := err.(pg.Error); ok && pgErr.IntegrityViolation() {
+        fmt.Println("User already exists:", err)
+    } else {
+        panic(err)
+    }
+}
+```
+
+### Example 3: Handling Query Timeout
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+defer cancel()
+
+var data YourModel
+_, err := db.QueryOneContext(ctx, &data, "SELECT * FROM large_table")
+if err != nil {
+    if errors.Is(err, context.DeadlineExceeded) {
+        fmt.Println("Query timeout reached")
+    } else {
+        panic(err)
+    }
+}
+```
+
+
+## 8. Troubleshooting Tips
+
+- **Verify Connection Health**: Network interruptions can cause errors; check your connection and retry logic.
+- **Use `ExecOne`/`QueryOne` for Single-row Queries**: These methods return precise errors when assumptions about row counts are violated.
+- **Inspect PostgreSQL Error Codes**: Use `pg.Error.Field('C')` to get the error code for targeted handling.
+- **Enable Context Timeouts**: Protect your application from hanging on slow or blocked queries.
+- **Log Notices and Warnings**: go-pg logs server notices; review logs to catch subtle database warnings.
+
+
+## 9. Related Documentation & Resources
+
+- [DB Connection & Configuration](/api-reference/core-db-interfaces/db-connection-and-configuration) — How to configure database connections
+- [Managing Transactions](/guides/application-patterns/transactions) — Handling transactional errors properly
+- [Connection Pooling and Reliability](/guides/performance-best-practices/connection-pooling) — Understanding error handling in pooled connections
+- [Troubleshooting Common Setup Issues](/getting-started/first-use/troubleshooting-common-setup-issues) — Diagnose typical connectivity problems
+
+---
+
+## Summary
+
+Effective error handling in go-pg revolves around recognizing predefined error types (`ErrNoRows`, `ErrMultiRows`), leveraging the `pg.Error` interface for PostgreSQL server errors, and incorporating context-aware cancellations. Proper interpretation of error codes empowers you to handle database constraints, network failures, and query cancellations gracefully, ensuring robustness in your data operations.
+
+---
+
+## Additional Code Reference
+
+Complete error detection is embedded in go-pg's internal logic, including:
+
+```go
+// Assert one row returned
+func AssertOneRow(l int) error {
+    switch {
+    case l == 0:
+        return ErrNoRows
+    case l > 1:
+        return ErrMultiRows
+    default:
+        return nil
+    }
+}
+
+// PostgreSQL error detection
+func (err PGError) IntegrityViolation() bool {
+    switch err.Field('C') {
+    case "23000", "23001", "23502", "23503", "23505", "23514", "23P01":
+        return true
+    default:
+        return false
+    }
+}
+```
+
+Use these utilities in your error handling workflows.
+
+---
+
+# Visual: Error Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Client as go-pg Client
+    participant PG as PostgreSQL Server
+
+    App->>Client: Send Query
+    Client->>PG: Execute
+    PG-->>Client: Success | Error Response
+    alt Success
+        Client-->>App: Query Result
+    else Error Response
+        PG Error --> Client
+        Client-->>App: pg.Error or err
+    end
+
+    Note over App: Handle error via type switches
+    App->>App: if ErrNoRows / ErrMultiRows -> handle
+    App->>App: if pg.Error with IntegrityViolation -> handle conflict
+    App->>App: if context timeout -> cancel
+
+```
+
+---

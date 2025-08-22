@@ -1,0 +1,199 @@
+---
+title: "Schema Migrations and Tooling"
+description: "Overview of using popular migration libraries with go-pg, including tips for evolving schemas safely and integrating migrations into your Go development workflow."
+---
+
+# Schema Migrations and Tooling
+
+## Overview
+This guide provides a practical overview of how to integrate popular schema migration libraries with go-pg. It focuses on evolving database schemas safely throughout your Go development workflow, ensuring your application and database remain in sync. By following this guide, you will learn how to incorporate migration steps effectively, handle schema changes without downtime, and leverage best practices for migration management.
+
+---
+
+## 1. Migration Libraries Compatible with go-pg
+
+There are a few well-known Go migration libraries that work smoothly with go-pg, offering structured schema evolution capabilities:
+
+- **vmihailenco/migrations**: A lightweight migration library offering simple CLI and programmatic interface.
+- **robinjoseph08/go-pg-migrations**: Specifically designed for go-pg, it integrates migrations tightly with the ORM.
+
+### Why use migrations?
+Schema migrations let you safely update your database structure over time, tracking which changes have been applied and maintaining consistency across all environments.
+
+---
+
+## 2. Setting Up Migrations in Your go-pg Project
+
+Before running migrations, you must ensure:
+
+- Your PostgreSQL database is accessible to your Go application.
+- go-pg is properly configured and your models are defined.
+- Migration library is imported and initialized.
+
+### Example: Integrating `go-pg-migrations`
+
+1. Add the migration library to your module:
+
+```bash
+  go get github.com/robinjoseph08/go-pg-migrations
+```
+
+2. Create a migrations directory to hold migration files, e.g., `migrations/`.
+
+3. Write migration functions:
+
+```go
+package migrations
+
+import (
+    "github.com/go-pg/pg/v10"
+    "github.com/robinjoseph08/go-pg-migrations"
+)
+
+func init() {
+    migrations.MustRegisterTx(
+        upCreateUsersTable,
+        downDropUsersTable,
+    )
+}
+
+func upCreateUsersTable(db *pg.Tx) error {
+    _, err := db.Exec(`CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL
+    )`)
+    return err
+}
+
+func downDropUsersTable(db *pg.Tx) error {
+    _, err := db.Exec(`DROP TABLE IF EXISTS users`)
+    return err
+}
+}
+```
+
+4. In your app start-up or migration runner:
+
+```go
+package main
+
+import (
+    "github.com/go-pg/pg/v10"
+    "github.com/robinjoseph08/go-pg-migrations"
+    _ "yourapp/migrations" // imports migrations package
+    "log"
+)
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User: "postgres",
+        // other options
+    })
+    defer db.Close()
+
+    err := migrations.Run(db, nil) // runs all up migrations
+    if err != nil {
+        log.Fatalf("Migration failed: %v", err)
+    }
+
+    log.Println("Migrations applied successfully")
+}
+```
+
+---
+
+## 3. How To Evolve Your Schemas Safely
+
+Schema migrations are powerful but must be used carefully to avoid downtime or data loss.
+
+### Best Practices
+
+- **Write reversible migrations:** Always provide `up` and `down` steps.
+- **Test migrations in staging environment:** Apply and rollback migrations before production.
+- **Avoid destructive changes:** Be cautious with dropping columns or tables.
+- **Use transaction-based migrations:** This ensures rollback on failure.
+- **Version control migrations:** Keep migration scripts in your source repo for traceability.
+
+### Example: Adding a New Column
+
+Write a migration that adds new columns without affecting existing data:
+
+```go
+func upAddAgeColumn(db *pg.Tx) error {
+    _, err := db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS age INT`)
+    return err
+}
+
+func downDropAgeColumn(db *pg.Tx) error {
+    _, err := db.Exec(`ALTER TABLE users DROP COLUMN IF EXISTS age`)
+    return err
+}
+```
+
+Run migrations as usual to apply this change.
+
+---
+
+## 4. Integrating Migrations Into Your Development Workflow
+
+Migration tools fit naturally into your CI/CD pipeline, automated deployments, and local development.
+
+### Workflow Recommendations
+
+- **Local Development:** Run migrations on developer machines on startup or manually.
+- **Continuous Integration:** Automate migrations as a CI step before running tests.
+- **Production Deployments:** Automatically run migrations during deployment with proper backup and rollback plans.
+- **Schema Version Checks:** Implement checks to confirm database schema matches your migration versions.
+
+### Managing Migration State
+Migration tools maintain a table (usually named `schema_migrations`) tracking applied migrations. Avoid manual changes to this table.
+
+---
+
+## 5. Troubleshooting Common Migration Issues
+
+### Issue: Migration Fails in Middle
+- **Cause:** Syntax errors, missing permissions, or locking problems.
+- **Solution:** Check logs, verify SQL correctness, ensure the database user has required privileges. Use transactions to rollback.
+
+### Issue: Schema Out of Sync
+- **Cause:** Manual DB changes or skipped migrations.
+- **Solution:** Rebuild schema from fresh migrations or reconcile manually, then reapply migrations carefully.
+
+### Issue: Conflicting Migrations
+- **Cause:** Multiple branches with migrations merged out of order.
+- **Solution:** Coordinate migration naming and apply migrations sequentially.
+
+---
+
+## 6. Additional Tools and Resources
+
+- **Bun Migrations:** Newer tool by Bun project for more advanced use cases and multi-DB support.
+- **SQL Dump Tools:** For capturing and restoring schemas for backup and migration validation.
+
+Refer to the ecosystem integration page for a complete list of tools compatible with go-pg.
+
+---
+
+## 7. Summary
+Integrating schema migrations into your go-pg project streamlines your database evolution. By using supported migration libraries, following safe migration practices, and embedding migrations into your workflow, you ensure reliability and reduce risks. Proper testing and version control of your migration scripts are critical for success.
+
+---
+
+## Next Steps & Related Content
+
+- Review the [Defining Models and Basic CRUD](./guides/getting-started/define-models-crud) guide to ensure your models align with your schema.
+- Explore [Advanced Queries and Model Relationships](./guides/working-with-data/advanced-queries-relations) to deepen your database usage post-migration.
+- Check out the [Ecosystem & Integration Patterns](./overview/architecture-integration/integration-ecosystem) to see complementary tools.
+- For troubleshooting connection or query issues, refer to [Troubleshooting Common Setup Issues](./getting-started/first-use/troubleshooting-common-setup-issues).
+
+---
+
+<Tip>
+Always backup your database before running destructive migrations or deploying to production.
+</Tip>
+
+<Warning>
+Never manually edit the migration state table. Use migration commands to manage applied migrations.
+</Warning>

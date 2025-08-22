@@ -1,0 +1,177 @@
+---
+title: "Why isn't my struct or field mapping as expected?"
+description: "Explains default mapping behavior for structs, common pitfalls with field tags, SQL NULLs, and troubleshooting missing or extra columns in results. Provides clear mapping rules and validation techniques."
+---
+
+# Why Isn't My Struct or Field Mapping as Expected?
+
+This page clarifies how go-pg maps Go structs and their fields to PostgreSQL columns by default, common pitfalls involving struct tags and SQL NULL handling, and how to investigate mismatches like missing or extra columns in your query results. Understanding these mapping rules helps you diagnose and fix issues where your Go data structures don’t align as intended with your database queries.
+
+---
+
+## Understanding Default Struct-to-Column Mapping
+
+go-pg automatically maps your Go struct fields to PostgreSQL columns based on naming conventions and struct tags. By default:
+
+- Struct fields map to SQL columns with names derived from the field names, typically snake_cased.
+- Fields are matched by their `pg` struct tags if present, or otherwise by normalized field names.
+- Relationship fields (e.g., has-one, has-many) use join conventions with aliases.
+
+For example, a struct field:
+
+```go
+type User struct {
+    ID   int    `pg:"id,pk"`
+    Name string
+}
+```
+
+maps the `ID` field explicitly to the `id` column and is treated as a primary key, while `Name` maps to `name` by default.
+
+
+<Tip>
+Ensure your struct fields have correct `pg` tags for precise control over column mappings.
+</Tip>
+
+
+## Common Pitfalls With Field Tags
+
+### Missing or Misplaced Tags
+Incorrect or absent `pg` tags can cause fields to map improperly or be ignored.
+
+**Example:** Forgetting the `,pk` tag on a primary key leads to incorrect query generation.
+
+### Field Name Case and Naming
+The ORM converts Go field names to SQL column names by snake casing, so mismatches in expectations can occur.
+
+### Ignored Fields
+Fields tagged with `pg:"-"` are explicitly ignored and won’t map to any database column.
+
+### Using Underscore Prefixes
+Columns returned with an underscore prefix are treated as internal or ignored, which may affect visibility.
+
+
+## Handling SQL NULL Values
+
+PostgreSQL NULLs require special attention because Go zero values differ.
+
+- By default, go-pg treats zero values as NULL unless overridden.
+- Use pointer types (e.g., `*string`, `*int`) in your struct to distinguish NULL from zero values.
+
+
+<Note>
+If your struct uses non-pointer types and you want to store NULL in the database, the ORM converts zero values to NULLs unless tagged with `pg:"use_zero"`.
+</Note>
+
+
+## Diagnosing Missing or Extra Columns in Results
+
+If you find that columns are missing or extra in your query results mapping, consider the following diagnostic steps:
+
+1. **Check Column Naming in SQL Query:**
+   Ensure the selected columns in your SQL query match those expected by the struct.
+
+2. **Verify Struct Tags and Field Names:**
+   Confirm the existence and correctness of field tags.
+
+3. **Use Debug Logging:**
+   Enable query logging to inspect which columns the ORM expects and receives.
+
+4. **Examine Relation and Join Mappings:**
+   For structs with related models, check the join aliases and relation definitions.
+
+5. **Validate NULL Handling:**
+   Zero values versus NULLs can result in unexpected scan failures or omission.
+
+6. **Discard Unknown Columns Option:**
+   The model flag `discard_unknown_columns` lets you ignore extra columns that don’t map.
+
+
+## Practical Validation Techniques
+
+- **Enable ORM Debugging:** Use `db.OnQueryProcessed` hook or logging configs to see underlying queries and scanned columns.
+
+- **Manual Model Inspection:** Check the table and relation metadata with `GetTable()` and its mappings.
+
+- **Use Basic Query with Select:** Run raw SQL queries mapping explicitly selected columns matching struct fields.
+
+- **Test Scan Separately:** Create a minimal model scan test using `Scan()` or map models to verify raw column mapping.
+
+
+## Best Practices to Avoid Mapping Issues
+
+- Always define primary keys explicitly with `pg:"pk"`.
+- Use pointer types for nullable fields.
+- Tag ignored fields with `pg:"-"` to avoid accidental mapping.
+- Use consistent naming conventions and verify with database schema.
+- Leverage `discard_unknown_columns` for flexible queries, especially with JOINs.
+- Confirm relation joins use proper aliasing and column prefixes to avoid collisions.
+
+
+## Troubleshooting Common Errors
+
+<AccordionGroup title="Common Mapping Issues & Solutions">
+<Accordion title="Error: can't find column in table">
+This occurs when your query returns a column not present in your struct or when the struct/ORM model doesn’t recognize the field.
+
+**Fix:** Check column naming, apply `discard_unknown_columns` if intentional, or add the missing field/tag.
+</Accordion>
+<Accordion title="Pointers and NULL values not mapping properly">
+Zero values may be mistakenly interpreted as NULL and vice versa.
+
+Use pointer types for nullable columns and `pg:"use_zero"` tag for fields where zero is a valid non-null value.
+</Accordion>
+<Accordion title="Missing related model data in join queries">
+Joins may not populate nested structs or slices due to wrong aliasing or incomplete relation setup.
+
+Verify the relations, use explicit select columns in joins, and confirm that join models are properly initializing slices or pointers.
+</Accordion>
+</AccordionGroup>
+
+
+## Example Scenario: Struct Field Not Mapping Correctly
+
+Given this struct:
+
+```go
+type Order struct {
+    ID       int
+    Customer string
+    Amount   float64
+    Notes    *string `pg:",use_zero"`
+}
+```
+
+If `Notes` is nullable in SQL but `*string` is not receiving NULLs properly, ensure `pg:",use_zero"` is used only if you want empty string treated as zero; otherwise use just `*string` without the `use_zero` tag.
+
+
+## Key Functions and Components Handling Mapping Internally
+
+- **`structTableModel.scanColumn`**: Scans individual SQL columns into struct fields.
+- **`Field.ScanValue` and `Field.AppendValue`**: Responsible for field-level scanning and value appending, respecting tags and null handling.
+- **`splitColumn`**: Splits aliased column names (`join__column`) for nested relations.
+- **`newStructTableModel` / `newSliceTableModel`**: Initialize models handling structs vs slices.
+
+
+## Additional Tips
+
+- When using relations (`has_one`, `has_many`, `many_to_many`), always verify join conditions and aliases.
+- Use debugging output to trace how columns are selected and matched.
+- Regularly sync your Go model struct changes with database schema updates.
+
+
+---
+
+## Related Documentation
+
+- [Defining and Using Models](https://pg.uptrace.dev/api-reference/orm-model-workflows/defining-and-using-models) — for comprehensive model setup and tag usage
+- [Model Relations and Joins](https://pg.uptrace.dev/api-reference/orm-model-workflows/model-relations-and-joins) — for configuring and troubleshooting relations
+- [Working with Composite Types](https://pg.uptrace.dev/guides/working-with-data/composite-types) — for complex nested struct mapping
+- [Arrays, JSONB, and Hstore Support](https://pg.uptrace.dev/guides/working-with-data/arrays-jsonb-hstore) — for advanced PostgreSQL type mapping
+- [Troubleshooting Common Setup Issues](https://pg.uptrace.dev/getting-started/first-use/troubleshooting-common-setup-issues) — for setup and runtime troubleshooting
+
+
+---
+
+## Summary
+This FAQ page helps you understand why your Go structs and fields may not map to PostgreSQL columns as expected by explaining default mapping conventions, common struct tag pitfalls, and SQL NULL handling. It provides practical troubleshooting approaches to fix missing or extra columns in query results and suggests best practices for avoiding mapping issues.

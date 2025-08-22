@@ -1,0 +1,154 @@
+---
+title: "Breaking Changes"
+description: "A comprehensive record of major, backward-incompatible modifications in each release. This page prepares users for changes that impact application compatibility, with practical notes on required actions."
+---
+
+# Breaking Changes
+
+A comprehensive record of major, backward-incompatible modifications introduced across go-pg releases. This document is indispensable when upgrading go-pg in your projects, helping you anticipate, understand, and smoothly adapt to breaking changes that affect your application compatibility.
+
+---
+
+## Understanding Breaking Changes
+
+Breaking changes are alterations in go-pg behavior, API, configuration, or data handling that require updates to your code or database schema to maintain functionality. These changes are not backward compatible and can cause runtime errors or unexpected behavior if overlooked.
+
+This page is designed from the user’s perspective, focusing on how these modifications affect your workflows and what specific steps you should take to adapt.
+
+<Tip>
+Always review breaking changes carefully before upgrading to a new go-pg major or minor version. Plan code refactoring or database migrations when necessary.
+</Tip>
+
+---
+
+## How to Use This Document
+
+1. **Identify Your Current Version:** Locate the latest breaking changes starting from your current go-pg version upwards.
+2. **Review Each Entry Carefully:** Understand what changed and why it matters to your codebase.
+3. **Follow Migration Notes:** Look for precise instructions, code snippets, or altered behaviors that demand your attention.
+4. **Test Thoroughly:** After applying updates, rigorously test database interactions to avoid runtime issues.
+
+---
+
+## Breaking Changes by Version
+
+### Version 10.x.x
+
+- **Complete Module Versioning:** The import path for go-pg is now `github.com/go-pg/pg/v10`. Omitting the `/v10` suffix will lead to incompatibilities and compilation failures.
+
+- **Default Linters and Configuration Adjustments:** Strict enforcement of linting defaults may flag previously ignored issues. Review your `.golangci.yml` (or equivalent) linting configurations to address new warnings or disable lints thoughtfully, e.g., disabled lints like `gochecknoglobals` or `gocognit`.
+
+- **Model Relation Queries:** The ORM’s relation loading and joins enforce stricter validation rules. Nested relations syntax (e.g., `Relation("Balls.Cat.Dogs.Elephants")`) and their use in `Select` calls now require precise struct tagging and relation definitions to avoid query errors.
+
+- **Composite Type Handling:** Changes in scanning and marshaling composites require structs used for PostgreSQL composite types to follow the updated format and tagging conventions rigorously.
+
+- **JSONB and Advanced Types:** The JSONB handling may require updates in model struct tags or initialization patterns especially when embedding nested JSON-serializable structs (`pg:"type:jsonb"`).
+
+- **Connection Pool Configuration:** New parameters and stricter pool lifecycle management may impact how connections are created, reused, or timed out (see connection-pooling documentation).
+
+### Version 9.x.x and Earlier (Maintenance Mode Warning)
+
+- **Maintenance Mode:** go-pg is now in maintenance mode with only critical fixes. New development has moved to Bun ORM.
+
+- **Compatibility:** Upgrading from earlier major versions (e.g., v8) may involve significant API and internal client changes; consult migration guides carefully.
+
+---
+
+## Common Migration Steps
+
+### Import Paths and Dependencies
+
+Updating import paths to reflect the major version explicitly (e.g., `github.com/go-pg/pg/v10`) is mandatory.
+
+### Model Definition Updates
+
+- Verify all primary keys, foreign keys, and relations have correct `pg` tags.
+- Ensure fields using advanced types like `jsonb`, arrays, or composites comply with the latest struct tagging standards.
+
+### Relation Loading
+
+- Adjust nested relations and join queries to match new ORM expectations.
+- Add explicit relation preloads where implicit relation fetching was previously used.
+
+### Configuration and Initialization
+
+- Review `.golangci.yml` or linting configurations, especially if linting failures arise post-upgrade.
+- Update connection pool settings to incorporate new options such as concurrency limits or deadline enforcement.
+
+### Testing & Validation
+
+- Execute incremental integration tests focusing on CRUD operations and complex queries.
+- Use provided examples and quickstart guides to verify foundational ORM behaviors.
+
+---
+
+## Troubleshooting Common Issues
+
+<AccordionGroup title="Common Breaking Change Pitfalls">
+<Accordion title="Import Errors After Upgrade">
+Verify all import paths include the proper major version suffix (`/v10`). Go modules require this to distinguish breaking API changes.
+</Accordion>
+
+<Accordion title="Failed Relation Queries">
+Check that nested relation names in `Relation("...")` calls map exactly to struct relations. Misspellings or missing relation tags cause query failures.
+</Accordion>
+
+<Accordion title="JSONB or Composite Type Scanning Errors">
+Confirm your model structs correctly define JSONB fields with `pg:"type:jsonb"` and use pointer types when necessary. Composite types must have all relevant fields and tags to serialize correctly.
+</Accordion>
+
+<Accordion title="Connection Pool Timeout or Exhaustion Problems">
+Tune pooling parameters introduced in recent versions, such as maximum concurrency and query deadlines, to fit your workload and environment.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Example Upgrade Snippet
+
+Here is a minimal adjustment example showing a model relation query update:
+
+```go
+// Before (may fail if relation tags are insufficient or ambiguous):
+err := db.Model(a).Relation("Balls.Cat.Dogs.Elephants").Select()
+
+// After (ensure all relations are defined and tagged properly; explicit relation usage):
+err := db.Model(a).
+    Relation("Balls").
+    Relation("Balls.Cat").
+    Relation("Balls.Cat.Dogs").
+    Relation("Balls.Cat.Dogs.Elephants").
+    Select()
+```
+
+Use model definitions and relation declaration guides for validation.
+
+---
+
+## Additional Resources
+
+- [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud)
+- [Model Relations and Joins](/api-reference/orm-model-workflows/model-relations-and-joins)
+- [Connection Pooling and Reliability](/guides/performance-best-practices/connection-pooling)
+- [Schema Migrations and Tooling](/guides/application-patterns/schema-migrations)
+- [Performance and Scalability Optimizations](/concepts/performance-scalability/query-optimizations)
+- [Troubleshooting Common Setup Issues](/getting-started/first-use/troubleshooting-common-setup-issues)
+
+---
+
+## Summary
+
+This page documents significant backward-incompatible changes in go-pg releases to empower users to plan effective upgrades. It emphasizes concrete user actions, highlights areas prone to issues, and provides practical adaptation tips. Always combine reviewing breaking changes with comprehensive testing before deployment to avoid runtime disruptions.
+
+For a complete upgrade roadmap, consult the linked migration note pages and detailed examples within the guides.
+
+---
+
+## Feedback and Support
+
+For further help with upgrading or understanding breaking changes, join the [go-pg Discord community](https://discord.gg/rWtp5Aj), raise issues on [GitHub](https://github.com/go-pg/pg/issues), or review discussions in the `pg` repo.
+
+
+---
+
+_Last updated: Refer to go-pg GitHub version tags and release notes for the latest breaking changes._

@@ -1,0 +1,297 @@
+---
+title: "Working with Composite Types"
+description: "How to define, scan, and insert PostgreSQL composite types with go-pg, mapping them onto Go structs. Covers table creation, query mapping, and best practices for complex structured data."
+---
+
+# Working with Composite Types
+
+## Overview
+This guide explains how to effectively work with PostgreSQL composite types using go-pg. Composite types allow users to define complex structured data mapped onto Go structs, enabling seamless integration of nested types within your database schema and queries. You'll learn how to define composite types in Go structs, create corresponding PostgreSQL composite types and tables, insert data, query and scan composite type fields, and follow best practices to manage complex structured data.
+
+---
+
+## What You Will Learn
+- How to define Go structs that represent PostgreSQL composite types
+- Creating PostgreSQL composite types with go-pg
+- Mapping composite types to nested struct fields
+- Inserting and querying data that includes composite types
+- Handling common pitfalls and applying best practices
+
+---
+
+## Prerequisites
+- Basic understanding of PostgreSQL data types and SQL
+- A Go development environment with go-pg v10 installed and configured
+- Existing connection to a PostgreSQL database via go-pg
+- Familiarity with defining simple Go models and basic CRUD operations using go-pg (see [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud))
+
+---
+
+## Time Estimate
+Approximately 15-30 minutes to follow the examples and try out composite types in a sample project.
+
+---
+
+## Step-by-Step Instructions
+
+### 1. Define Your Composite Type as a Go Struct
+Create a Go struct that represents the composite type fields exactly as you want them stored in PostgreSQL. For example:
+
+```go
+// InventoryItem models the PostgreSQL composite type.
+type InventoryItem struct {
+    Name       string
+    SupplierID int
+    Price      float64
+}
+```
+
+This struct will later be used to create the PostgreSQL composite type.
+
+---
+
+### 2. Define the Main Table Struct Containing Composite Fields
+Define a struct for your main table that includes the composite type as a field. Use the `pg:"composite:<type-name>"` tag on the composite field to identify it as a PostgreSQL composite type:
+
+```go
+type OnHand struct {
+    tableName struct{} `pg:"on_hand"`
+
+    Item  InventoryItem `pg:"composite:inventory_item"`
+    Count int
+}
+```
+
+Here, `OnHand` represents a table with a composite column `Item` of type `inventory_item`.
+
+---
+
+### 3. Create the PostgreSQL Composite Type in the Database
+Before creating tables that reference composite types, create the composite type explicitly using go-pg's ORM methods:
+
+```go
+err := db.Model((*InventoryItem)(nil)).DropComposite(&orm.DropCompositeOptions{IfExists: true})
+if err != nil {
+    panic(err)
+}
+
+err = db.Model((*InventoryItem)(nil)).CreateComposite(nil)
+if err != nil {
+    panic(err)
+}
+```
+
+This drops the existing composite type if it exists and creates it again based on your Go struct.
+
+---
+
+### 4. Create the Table Referencing the Composite Type
+Create the table struct that includes the composite type:
+
+```go
+err = db.Model((*OnHand)(nil)).DropTable(&orm.DropTableOptions{IfExists: true, Cascade: true})
+if err != nil {
+    panic(err)
+}
+
+err = db.Model((*OnHand)(nil)).CreateTable(nil)
+if err != nil {
+    panic(err)
+}
+```
+
+This will create a database table `on_hand` with a column of the composite type.
+
+---
+
+### 5. Insert Data with Composite Types
+Use go-pg ORM's standard `Insert` method to add records with composite types:
+
+```go
+_, err = db.Model(&OnHand{
+    Item: InventoryItem{
+        Name:       "fuzzy dice",
+        SupplierID: 42,
+        Price:      1.99,
+    },
+    Count: 1000,
+}).Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+This inserts a row with nested composite data for `Item`.
+
+---
+
+### 6. Query and Scan Composite Type Fields
+Retrieve records and scan composite fields directly into your nested Go structs:
+
+```go
+onHand := new(OnHand)
+err = db.Model(onHand).Select()
+if err != nil {
+    panic(err)
+}
+
+fmt.Println(onHand.Item.Name, onHand.Item.Price, onHand.Count)
+// Output: fuzzy dice 1.99 1000
+```
+
+The composite type is decoded and scanned automatically into the nested struct.
+
+---
+
+## Best Practices and Tips
+- Always create the PostgreSQL composite type before creating tables referencing it.
+- Use `pg:"composite:<type-name>"` struct tags to properly map composite fields.
+- Composite types map very naturally to nested Go structs, so maintain your field naming carefully.
+- To update composite types, perform normal update operations via the ORM—go-pg marshals the composite correctly.
+- Remember to handle dropping composite types carefully if your schema evolves to avoid database conflicts.
+
+---
+
+## Common Pitfalls and Troubleshooting
+
+### Composite Type Not Found in PostgreSQL
+- Ensure you have called `CreateComposite` on the composite struct before creating tables.
+- Use the `DropComposite` method to clean up leftover types during development.
+
+### Incorrect Scanning or Nil Pointer Errors
+- Confirm the composite field struct is correctly tagged with `pg:"composite:<name>"`.
+- Make sure your nested struct fields are exported and match the composite type.
+
+### SQL Errors about the Composite Column Type
+- Double-check the PostgreSQL type name matches exactly with the tag in your Go struct.
+- Make sure the database connection user has the rights to create and drop types.
+
+---
+
+## Example: Complete Composite Type Usage
+
+```go
+package pg_test
+
+import (
+    "fmt"
+
+    "github.com/go-pg/pg/v10/orm"
+)
+
+type InventoryItem struct {
+    Name       string
+    SupplierID int
+    Price      float64
+}
+
+type OnHand struct {
+    tableName struct{} `pg:"on_hand"`
+
+    Item  InventoryItem `pg:"composite:inventory_item"`
+    Count int
+}
+
+func ExampleDB_Model_compositeType() {
+    db := connect() // Your db connection setup
+    defer db.Close()
+
+    // Drop existing to start clean
+    err := db.Model((*OnHand)(nil)).DropTable(&orm.DropTableOptions{
+        IfExists: true,
+        Cascade:  true,
+    })
+    panicIf(err)
+
+    err = db.Model((*InventoryItem)(nil)).DropComposite(&orm.DropCompositeOptions{
+        IfExists: true,
+    })
+    panicIf(err)
+
+    // Create composite type
+    err = db.Model((*InventoryItem)(nil)).CreateComposite(nil)
+    panicIf(err)
+
+    // Create main table
+    err = db.Model((*OnHand)(nil)).CreateTable(nil)
+    panicIf(err)
+
+    // Insert data
+    _, err = db.Model(&OnHand{
+        Item: InventoryItem{
+            Name:       "fuzzy dice",
+            SupplierID: 42,
+            Price:      1.99,
+        },
+        Count: 1000,
+    }).Insert()
+    panicIf(err)
+
+    // Query data
+    onHand := new(OnHand)
+    err = db.Model(onHand).Select()
+    panicIf(err)
+
+    fmt.Println(onHand.Item.Name, onHand.Item.Price, onHand.Count)
+    // Output: fuzzy dice 1.99 1000
+}
+
+func panicIf(err error) {
+    if err != nil {
+        panic(err)
+    }
+}
+```
+
+---
+
+## How It Works Internally
+
+- go-pg generates PostgreSQL `CREATE TYPE ... AS (...)` for your Go composite structs.
+- It maps nested struct fields in Go to composite columns in PostgreSQL.
+- When scanning from the database, go-pg uses a streaming parser to read composite data elements and assign them field by field.
+- When inserting or updating, go-pg serializes nested structs into the proper `ROW(...)` composite literal syntax supported by PostgreSQL.
+
+This automated mapping frees you from manually serializing and deserializing composite data.
+
+---
+
+## Additional Resources
+- [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud) — foundational guide on struct-model mapping
+- [Advanced Queries and Model Relationships](/guides/working-with-data/advanced-queries-relations) — working with nested and related data
+- [Configuration & Connecting to PostgreSQL](/getting-started/setup/configuration-setup) — setting up your database connection
+- [Go-pg GitHub Repository](https://github.com/go-pg/pg) — source code and examples
+
+---
+
+## Next Steps
+- Experiment by defining composite types with nested structures reflecting your domain model.
+- Combine composite types with relations and transactions for complex workflows.
+- Explore mapping arrays, JSONB, and hstore types for even richer data models.
+- Check out the [Soft Deletes and Timestamps](/guides/working-with-data/soft-delete-timestamps) for lifecycle management.
+
+
+<AccordionGroup title="Key Concepts Behind Composite Types">  
+<Accordion title="Composite Type Definition">  
+Composite types in PostgreSQL group multiple fields into a single column, mapped to nested Go structs in go-pg.  
+</Accordion>  
+<Accordion title="Mapping Tag">  
+The `pg:"composite:<type-name>"` struct tag identifies a field as a PostgreSQL composite type for go-pg.  
+</Accordion>  
+<Accordion title="Table Creation Order">  
+Create composite types before creating tables that use them to avoid SQL errors.  
+</Accordion>  
+<Accordion title="Data Insert and Select">  
+go-pg marshals composite structs into PostgreSQL `ROW()` syntax upon insert, and parses composite data on select.  
+</Accordion>  
+</AccordionGroup>
+
+<Tip>
+Always ensure your composite type struct fields are exported and align with PostgreSQL type fields; this guarantees correct scanning and querying.
+</Tip>
+
+<Warning>
+Dropping composite types in PostgreSQL requires dropping dependent tables or using cascade options; exercise caution during schema migrations.
+</Warning>
+
+---

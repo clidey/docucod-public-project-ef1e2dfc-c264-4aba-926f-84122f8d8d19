@@ -1,0 +1,627 @@
+---
+title: "Querying the Database"
+description: "Provides reference and usage examples for the main query interfaces, including executing raw SQL, prepared statements, and using ORM-based query builders. Showcases select, insert, update, and delete patterns."
+---
+
+# Querying the Database
+
+This reference page thoroughly documents how to interact with your PostgreSQL database using `go-pg`'s core query interfaces. Whether you want to execute raw SQL commands, leverage prepared statements, or use the powerful ORM query builder, this page guides you through essential querying patterns including selecting, inserting, updating, and deleting data.
+
+Throughout, you'll find concrete, copy-paste-ready examples designed for real-world usage, enabling you to master database querying workflows and solve common data access challenges confidently.
+
+---
+
+## 1. Executing Raw SQL Queries
+
+The foundation of `go-pg` querying is raw SQL execution via methods like `Query`, `QueryOne`, and `Exec`. These allow direct SQL commands with parameter substitution, supporting flexible, custom, and complex queries.
+
+### Using QueryOne
+Retrieve one result row mapped to a Go struct or variables.
+
+```go
+var user struct {
+    Name string
+}
+res, err := db.QueryOne(&user, `WITH users (name) AS (VALUES (?)) SELECT * FROM users`, "admin")
+if err != nil {
+    panic(err)
+}
+fmt.Println(res.RowsAffected()) // 1
+fmt.Println(user)               // {admin}
+```
+
+### QueryOne with INSERT and RETURNING
+```go
+var user struct {
+    Id   int32
+    Name string
+}
+_, err := db.QueryOne(&user, `INSERT INTO users (name) VALUES (?name) RETURNING id`, &user)
+if err != nil {
+    panic(err)
+}
+fmt.Println(user) // {1 admin}
+```
+
+### Executing statements without results
+```go
+res, err := db.Exec(`CREATE TEMP TABLE test()`) // returns affected rows, -1 means unknown
+if err != nil {
+    panic(err)
+}
+fmt.Println(res.RowsAffected())
+```
+
+---
+
+## 2. Prepared Statements
+
+Prepared statements improve performance for repeated queries by compiling once and reusing.
+
+```go
+stmt, err := db.Prepare(`SELECT $1::text, $2::text`)
+if err != nil {
+    panic(err)
+}
+var s1, s2 string
+_, err = stmt.QueryOne(pg.Scan(&s1, &s2), "foo", "bar")
+if err != nil {
+    panic(err)
+}
+fmt.Println(s1, s2) // foo bar
+```
+
+---
+
+## 3. The ORM Model Query Builder
+
+Use the ORM's fluent query builder to work directly with your Go structs mapped to database tables. The `Model` method is the entry point, followed by chaining methods to build your query.
+
+### 3.1 Selecting Records
+
+#### Select a Single Record by Primary Key
+```go
+book := &Book{ID: 1}
+err := db.Model(book).WherePK().Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(book) // Book<Id=1 Title="book 1">
+```
+
+#### Select the First Row
+```go
+var firstBook Book
+err := db.Model(&firstBook).First()
+if err != nil {
+    panic(err)
+}
+fmt.Println(firstBook) // Book<Id=1 Title="book 1">
+```
+
+#### Select with Column Filtering
+```go
+var book Book
+err := db.Model(&book).
+    Column("book.id", "book.title").
+    OrderExpr("book.id ASC").
+    Limit(1).
+    Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(book) // Book<Id=1 Title="book 1">
+```
+
+#### Select Where with IN clause
+```go
+var books []Book
+err := db.Model(&books).WhereIn("id IN (?)", []int{1, 2}).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(books) // [Book<Id=1 Title="book 1"> Book<Id=2 Title="book 2">]
+```
+
+#### Complex Where Conditions with WhereGroup
+Use `WhereGroup` to apply grouped OR/AND expressions.
+
+```go
+var books []Book
+err := db.Model(&books).
+    WhereGroup(func(q *pg.Query) (*pg.Query, error) {
+        q = q.WhereOr("id = 1").WhereOr("id = 2")
+        return q, nil
+    }).
+    Where("title IS NOT NULL").
+    Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(books) // [Book<Id=1 Title="book 1"> Book<Id=2 Title="book 2">]
+```
+
+### 3.2 Inserting Records
+
+Insert single or multiple models directly.
+
+```go
+book := &Book{Title: "new book", AuthorID: 1}
+_, err := db.Model(book).Insert()
+if err != nil {
+    panic(err)
+}
+fmt.Println(book) // Book<Id=4 Title="new book">
+```
+
+Bulk insert multiple objects:
+
+```go
+book1 := &Book{Title: "new book 1"}
+book2 := &Book{Title: "new book 2"}
+_, err := db.Model(book1, book2).Insert()
+if err != nil {
+    panic(err)
+}
+fmt.Println(book1, book2)
+// Output: Book<Id=4 Title="new book 1"> Book<Id=5 Title="new book 2">
+```
+
+Or insert a slice:
+
+```go
+books := []Book{{Title: "new book 1"}, {Title: "new book 2"}}
+_, err := db.Model(&books).Insert()
+if err != nil {
+    panic(err)
+}
+fmt.Println(books)
+// Output: [Book<Id=4 Title="new book 1"> Book<Id=5 Title="new book 2">]
+```
+
+#### Insert with On Conflict DO NOTHING
+Avoid errors on duplicate keys by ignoring conflicts.
+
+```go
+book := &Book{ID: 100, Title: "book 100"}
+for i := 0; i < 2; i++ {
+    res, err := db.Model(book).OnConflict("DO NOTHING").Insert()
+    if err != nil {
+        panic(err)
+    }
+    if res.RowsAffected() > 0 {
+        fmt.Println("created")
+    } else {
+        fmt.Println("did nothing")
+    }
+}
+// Output:
+// created
+// did nothing
+```
+
+#### Insert with On Conflict DO UPDATE
+Perform upserts by updating existing rows on conflict.
+
+```go
+for i := 0; i < 2; i++ {
+    book := &Book{
+        ID:    100,
+        Title: fmt.Sprintf("title version #%d", i),
+    }
+    _, err := db.Model(book).
+        OnConflict("(id) DO UPDATE").
+        Set("title = EXCLUDED.title").
+        Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    err = db.Model(book).WherePK().Select()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(book)
+}
+// Output:
+// Book<Id=100 Title="title version #0">
+// Book<Id=100 Title="title version #1">
+```
+
+### 3.3 Updating Records
+
+#### Update Using Primary Key
+```go
+book := &Book{ID: 1}
+err := db.Model(book).WherePK().Select()
+if err != nil {
+    panic(err)
+}
+book.Title = "updated book 1"
+_, err = db.Model(book).WherePK().Update()
+if err != nil {
+    panic(err)
+}
+fmt.Println(book) // Book<Id=1 Title="updated book 1">
+```
+
+#### Update Only Non-Zero Values
+```go
+book := &Book{ID: 1, Title: "updated book 1"}
+_, err := db.Model(book).WherePK().UpdateNotZero()
+if err != nil {
+    panic(err)
+}
+```
+
+#### Update Specific Columns
+```go
+book := Book{ID: 1, Title: "updated book 1", AuthorID: 2}
+_, err := db.Model(&book).Column("title").WherePK().Returning("*").Update()
+if err != nil {
+    panic(err)
+}
+fmt.Println(book.Title) // updated book 1
+```
+
+#### Update Using Custom Set Expressions
+```go
+_, err := db.Model(&Book{}).
+    Set("title = concat(?, title, ?)", "prefix ", " suffix").
+    Where("id = ?", 1).
+    Returning("*").
+    Update()
+if err != nil {
+    panic(err)
+}
+```
+
+### 3.4 Bulk Updates
+
+Update multiple models in bulk to optimize throughput.
+
+```go
+book1 := &Book{ID: 1, Title: "updated book 1", UpdatedAt: time.Now()}
+book2 := &Book{ID: 2, Title: "updated book 2", UpdatedAt: time.Now()}
+_, err := db.Model(book1, book2).Column("title", "updated_at").Update()
+if err != nil {
+    panic(err)
+}
+```
+
+Or with slice:
+
+```go
+books := []Book{{ID: 1, Title: "updated book 1", UpdatedAt: time.Now()}, {ID: 2, Title: "updated book 2", UpdatedAt: time.Now()}}
+_, err := db.Model(&books).Column("title", "updated_at").Update()
+if err != nil {
+    panic(err)
+}
+```
+
+### 3.5 Deleting Records
+
+#### Delete Single Record by Primary Key
+```go
+book := &Book{Title: "title 1", AuthorID: 1}
+_, err := db.Model(book).Insert()
+if err != nil {
+    panic(err)
+}
+_, err = db.Model(book).WherePK().Delete()
+if err != nil {
+    panic(err)
+}
+```
+
+#### Delete Multiple Records Using Where Condition
+```go
+ids := pg.In([]int{1, 2, 3})
+res, err := db.Model((*Book)(nil)).Where("id IN (?)", ids).Delete()
+if err != nil {
+    panic(err)
+}
+fmt.Println("deleted", res.RowsAffected())
+```
+
+#### Bulk Delete Using a Slice
+```go
+var books []Book
+err := db.Model(&books).Select()
+if err != nil {
+    panic(err)
+}
+res, err := db.Model(&books).Delete()
+if err != nil {
+    panic(err)
+}
+fmt.Println("deleted", res.RowsAffected())
+```
+
+---
+
+## 4. Advanced Query Patterns
+
+### 4.1 Using Common Table Expressions (WITH)
+
+Alias a query with `With()` or `WrapWith()` to reuse or simplify complex queries.
+
+```go
+authorBooks := db.Model(&Book{}).Where("author_id = ?", 1)
+
+var books []Book
+err := db.Model().
+    With("author_books", authorBooks).
+    Table("author_books").
+    Select(&books)
+if err != nil {
+    panic(err)
+}
+fmt.Println(books) // [Book<Id=1 Title="book 1"> Book<Id=2 Title="book 2">]
+```
+
+### 4.2 Filtering with Dynamic Conditions Using Apply
+
+You can apply conditional logic for query filtering dynamically.
+
+```go
+authorId := 1
+editorId := 0
+filter := func(q *pg.Query) (*pg.Query, error) {
+    if authorId != 0 {
+        q = q.Where("author_id = ?", authorId)
+    }
+    if editorId != 0 {
+        q = q.Where("editor_id = ?", editorId)
+    }
+    return q, nil
+}
+var books []Book
+err := db.Model(&books).
+    Apply(filter).
+    Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(books) // [Book<Id=1 Title="book 1"> Book<Id=2 Title="book 2">]
+```
+
+### 4.3 Estimating Row Count Efficiently
+
+Use CountEstimate for fast approximate counts via PostgreSQL EXPLAIN.
+
+```go
+count, err := db.Model(&Book{}).CountEstimate(0)
+if err != nil {
+    panic(err)
+}
+fmt.Println(count) // 3
+```
+
+### 4.4 Select with Count
+
+Retrieve selected rows and total count in one operation.
+
+```go
+var books []Book
+count, err := db.Model(&books).OrderExpr("id ASC").Limit(2).SelectAndCount()
+if err != nil {
+    panic(err)
+}
+fmt.Println(count) // 3
+fmt.Println(books) // [Book<Id=1 Title="book 1"> Book<Id=2 Title="book 2">]
+```
+
+### 4.5 Checking Existence
+
+Determine if records exist efficiently.
+
+```go
+exists, err := db.Model(&Book{}).Where("author_id = ?", 1).Exists()
+if err != nil {
+    panic(err)
+}
+fmt.Println(exists) // true
+```
+
+### 4.6 Iterating Over Rows Incrementally
+
+Use `ForEach` to process rows one by one without loading entire result.
+
+```go
+err := db.Model((*Book)(nil)).OrderExpr("id ASC").ForEach(func(b *Book) error {
+    fmt.Println(b)
+    return nil
+})
+if err != nil {
+    panic(err)
+}
+```
+
+---
+
+## 5. Handling Relations
+
+Efficiently query related data with ORM relationship loaders.
+
+### Has One Relation
+```go
+type User struct {
+    Id      int
+    Name    string
+    Profile *Profile `pg:"rel:has-one"`
+}
+
+var users []User
+err := db.Model(&users).
+    Relation("Profile").
+    Select()
+if err != nil {
+    panic(err)
+}
+```
+
+### Belongs To Relation
+```go
+type Profile struct {
+    Id     int
+    Lang   string
+    UserId int
+}
+
+var users []User
+err := db.Model(&users).
+    Relation("Profile").
+    Select()
+if err != nil {
+    panic(err)
+}
+```
+
+### Has Many Relation with Filtering
+```go
+var user User
+err := db.Model(&user).
+    Relation("Profiles", func(q *pg.Query) (*pg.Query, error) {
+        return q.Where("active IS TRUE"), nil
+    }).
+    First()
+if err != nil {
+    panic(err)
+}
+```
+
+---
+
+## 6. Special Query Utilities
+
+### Use Safe and Ident to Build Secure Queries
+
+Protect against SQL injection and safely insert dynamic expressions.
+
+```go
+cond := "id = 1"
+var book Book
+err := db.Model(&book).Where("?", pg.Safe(cond)).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(book)
+```
+
+```go
+var book Book
+err := db.Model(&book).Where("? = 1", pg.Ident("id")).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(book)
+```
+
+### Null and Empty Values
+
+Handle nullable string types correctly.
+
+```go
+var str sql.NullString
+_, err := db.QueryOne(pg.Scan(&str), "SELECT ?hello", &Example{Hello: ""})
+if err != nil {
+    panic(err)
+}
+fmt.Println(str.Valid) // false
+```
+
+### Using JSON Use Number
+
+Ensure JSON numbers decode as `json.Number` instead of float64.
+
+```go
+type Event struct {
+    Id   int
+    Data map[string]interface{} `pg:",json_use_number"`
+}
+```
+
+---
+
+## 7. Error Handling
+
+`go-pg` provides detailed errors with PostgreSQL error codes to distinguish issues and handle them appropriately.
+
+```go
+video := &Video{Id: 123}
+_, err := db.Model(video).Insert()
+if err != nil {
+    panic(err)
+}
+_, err = db.Model(video).Insert()
+if err != nil {
+    pgErr, ok := err.(pg.Error)
+    if ok && pgErr.IntegrityViolation() {
+        fmt.Println("video already exists:", err)
+    } else if pgErr.Field('S') == "PANIC" {
+        panic(err)
+    }
+}
+```
+
+---
+
+## Summary
+This page equips you with comprehensive examples and explanations for querying your PostgreSQL database efficiently using the `go-pg` library. You'll learn to execute raw SQL, utilize prepared statements, and harness powerful ORM model-based queries covering select, insert, update, and delete operations, alongside advanced querying techniques and relation handling.
+
+Use this documentation as your primary reference to construct robust database interactions that handle real-world needs securely and performantly.
+
+---
+
+<Check>
+- Always use `WherePK()` to target specific primary-keyed records safely.
+- Use `OnConflict` clauses to implement upserts and avoid insert conflicts.
+- Leverage relation querying methods to load associated data efficiently in a single query.
+- Remember to handle errors explicitly to capture PostgreSQL-specific error information.
+</Check>
+
+---
+
+## Additional Resources
+
+Refer to these related documentation pages for deeper insights and complementary knowledge:
+
+- [Defining and Using Models](/api-reference/orm-model-workflows/defining-and-using-models) — for preparing your Go structs as database models.
+- [Model Relations and Joins](/api-reference/orm-model-workflows/model-relations-and-joins) — for complex association queries.
+- [Managing Transactions](/guides/application-patterns/transactions) — to combine querying with transactional control.
+- [Optimizing Queries and Batch Operations](/guides/performance-best-practices/optimizing-queries-batch) — for performance tuning using bulk operations.
+
+Explore examples and code snippets in the official go-pg repository to see real-world usage and further demonstrations.
+
+
+## Example: Full Flow of Querying and Updating
+
+```go
+func exampleQueryUpdateFlow(db *pg.DB) {
+    // Select one book by PK
+    book := &Book{ID: 1}
+    if err := db.Model(book).WherePK().Select(); err != nil {
+        panic(err)
+    }
+
+    // Update the title
+    book.Title = "Updated Title"
+    if _, err := db.Model(book).WherePK().Update(); err != nil {
+        panic(err)
+    }
+
+    // Select updated book
+    updatedBook := &Book{ID: 1}
+    if err := db.Model(updatedBook).WherePK().Select(); err != nil {
+        panic(err)
+    }
+    fmt.Println(updatedBook)
+}
+```
+
+Use this pattern as a model to build your data access workflows.
+
+---
+
+<Source url="https://github.com/go-pg/pg" paths={[{"path": "example_test.go", "range": "10-360"}, {"path": "example_model_test.go", "range": "1-390"}]} />

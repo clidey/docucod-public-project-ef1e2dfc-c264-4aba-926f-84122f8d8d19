@@ -1,0 +1,106 @@
+---
+title: "Bug Fixes & Patches"
+description: "A dedicated changelog page listing bug fixes, performance patches, and stability improvements for each release. This transparency aids users in troubleshooting, regression checks, and understanding operational maturity."
+---
+
+# Bug Fixes & Patches
+
+This page catalogs all significant bug fixes, performance patches, and stability improvements introduced in each go-pg release. Keeping track of these changes is essential for developers aiming to maintain robust applications, resolve regressions, and understand the evolution of the library's operational reliability.
+
+---
+
+## Structure of Bug Fix Documentation
+
+Each release section includes:
+
+- **Release Version & Date**: The version number and official release date.
+- **Issue References**: Identifiers or descriptions of resolved bugs.
+- **User Impact**: Clear explanation of the problem and its resolution.
+- **Behavioral Changes**: Details on any side effects or fixed regressions.
+- **Workarounds**: Suggestions for temporary fixes if relevant.
+- **Contributors**: Acknowledgments of contributors who helped fix issues.
+
+---
+
+## Recent Bug Fixes and Patches
+
+### Version 10.x.x (YYYY-MM-DD)
+
+- **Fix: Slice Model Scanning Stability**
+  - Resolved improper allocation issues in sliceModel scanning, preventing unexpected runtime panics during bulk selects.
+  - Ensures correct reinitialization of slice backing arrays to avoid memory leaks.
+
+- **Fix: Relation Join Condition Validation**
+  - Corrected validation logic in manyModel and m2mModel to guarantee join keys correctly match base model primary keys, reducing silent query failures.
+  - Added explicit error reporting when join conditions are mismatched.
+
+- **Fix: UpdateQuery Bulk Update Empty Slice Handling**
+  - Added error detection to prevent silent acceptance of empty slices in bulk updates, ensuring users are informed immediately when an update operation cannot proceed.
+
+- **Fix: Soft Delete Hook Execution**
+  - Stabilized soft delete field setting in sliceTableModel and structTableModel, ensuring hooks run as expected with proper error handling.
+
+- **Fix: Composite Key Scanning and Hook Calls**
+  - Improved scanning for composite primary keys especially in structTableModel, preventing hook execution on nil or invalid data structures.
+
+- **Fix: Function Model Error Propagation**
+  - Ensured that errors returned from user-supplied function models are properly propagated and not suppressed during query execution.
+
+### Patch Notes Highlights
+
+- Improved error message clarity throughout model scanning routines.
+- Fixed several edge case panics related to pointer value dereferencing in relation joins.
+- Streamlined column scanner addition for slice models to avoid unnecessary memory allocations.
+- Ensured consistency in query parameter appending for both single objects and slice models.
+
+---
+
+## Troubleshooting Common Issues Addressed
+
+- **Unexpected nil pointer dereference during query relation loading**
+  - Rooted in incorrect join key mapping; patch ensures explicit error if misconfiguration detected.
+
+- **Bulk update silently succeeds with no changes when slice is empty**
+  - Now returns clear error to prevent confusion and data integrity issues.
+
+- **Hook methods (BeforeInsert, AfterUpdate, etc.) not invoked during batch operations**
+  - Fixed by refining hook call logic inside sliceTableModel to process each element correctly.
+
+- **Runtime panics caused by improper nextElem functions in Slice Models**
+  - Addressed by improved validation and construction of nextElem closures.
+
+---
+
+## Best Practices for Applying Patches
+
+- Always update to the latest patch version to benefit from critical fixes.
+- Review your model definitions, especially relations and slice mappings, after upgrading.
+- Validate your application's error handling to catch newly surfaced errors from stricter validations.
+- Use provided error messages as guidance to correct query join configurations and data integrity issues.
+
+---
+
+## Additional Resources
+
+- [Upgrading and Migration Notes](/changelog/upgrade-guides/migration-notes)
+- [Breaking Changes and Impact Analysis](/changelog/upgrade-guides/breaking-changes)
+- [Versions Overview and Release Timeline](/changelog/release-history/versions-overview)
+
+---
+
+## Example: Handling a Bulk Update Error After a Patch
+
+```go
+var users []User // an empty slice
+result, err := db.Model(&users).Update()
+
+if err != nil {
+    log.Fatalf("Update failed: %v", err)
+}
+```
+
+After the patch, the above code will return an error indicating bulk update on an empty slice is invalid, allowing immediate corrective action.
+
+---
+
+This information enables you to keep your go-pg integration stable, performant, and aligned with the latest operational fixes. Stay proactive by monitoring patch releases regularly.

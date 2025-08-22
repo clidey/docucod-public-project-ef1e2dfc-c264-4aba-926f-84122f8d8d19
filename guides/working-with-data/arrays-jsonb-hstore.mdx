@@ -1,0 +1,307 @@
+---
+title: "Using Arrays, JSONB, and Hstore"
+description: "Step-by-step instructions for mapping Go types to advanced PostgreSQL data types: arrays, JSONB, and hstore. Includes guides on struct tags, wrappers, and integrating custom types for resilient, type-safe data interchange."
+---
+
+# Using Arrays, JSONB, and Hstore
+
+This guide provides clear, practical instructions to help you effectively map Go types to advanced PostgreSQL data types including arrays, JSONB, and hstore. You'll learn how to handle these types safely and efficiently using go-pg, leveraging struct tags, wrappers, and custom types to ensure robust, type-safe data interchange.
+
+---
+
+## 1. Understanding PostgreSQL Advanced Types
+
+PostgreSQL offers powerful data types beyond simple primitives, allowing you to store arrays, JSONB documents, and key-value pairs with hstore. Leveraging these types through go-pg enhances your application's expressiveness and reduces complexity by modeling complex data directly.
+
+### Why map to advanced PostgreSQL types?
+- Store multiple values in a single column with **arrays** (`text[]`, `int[]`, `float[]`).
+- Efficiently store and query JSON data with **JSONB** for semi-structured content.
+- Use **hstore** for simple key-value pairs, often useful for dynamic configurations.
+
+## 2. Prerequisites
+
+Before following this guide:
+- Ensure go-pg v10 is installed and configured.
+- Have a running PostgreSQL instance supporting these types.
+- Familiarity with defining models and basic CRUD in go-pg ([Defining Models and Basic CRUD](https://your-docs-link/guides/getting-started/define-models-crud)).
+
+---
+
+## 3. Working with PostgreSQL Arrays
+
+### 3.1 Declaring Array Fields in Go Structs
+
+To map Go slices or arrays to PostgreSQL arrays, tag your struct fields with `pg:",array"`.
+
+```go
+// Example: PostgreSQL array of text and nested integer arrays
+type Item struct {
+    Id      int64
+    Emails  []string `pg:",array"`  // maps to text[]
+    Numbers [][]int  `pg:",array"`  // maps to int[][]
+}
+```
+
+This setup automatically marshals and unmarshals Go slices to PostgreSQL arrays during insert and select operations.
+
+### 3.2 Insert and Select with Arrays
+
+```go
+item := &Item{
+    Id:      1,
+    Emails:  []string{"one@example.com", "two@example.com"},
+    Numbers: [][]int{{1, 2}, {3, 4}},
+}
+_, err := db.Model(item).Insert()
+if err != nil {
+    panic(err)
+}
+
+retrieved := new(Item)
+err = db.Model(retrieved).Where("id = ?", 1).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Printf("%#v\n", retrieved) // Emails and Numbers are populated correctly
+```
+
+### 3.3 Using `pg.Array` Wrapper for Queries
+
+For more control when using arrays in raw queries or scan destinations, use the `pg.Array()` wrapper.
+
+```go
+src := []string{"one@example.com", "two@example.com"}
+var dst []string
+_, err := db.QueryOne(pg.Scan(pg.Array(&dst)), `SELECT ?`, pg.Array(src))
+if err != nil {
+    panic(err)
+}
+fmt.Println(dst) // Output: [one@example.com two@example.com]
+```
+
+### 3.4 Custom Array Scanners
+
+For cases that need custom scanning logic, implement the `types.ArrayValueScanner` interface:
+
+```go
+type MyArrayValueScanner struct {
+    sum int
+}
+
+func (s *MyArrayValueScanner) BeforeScanArrayValue(rd types.Reader, n int) error {
+    return nil
+}
+
+func (s *MyArrayValueScanner) ScanArrayValue(rd types.Reader, n int) error {
+    num, err := types.ScanInt(rd, n)
+    if err != nil {
+        return err
+    }
+    s.sum += num
+    return nil
+}
+
+func (s *MyArrayValueScanner) AfterScanArrayValue() error {
+    return nil
+}
+
+var dst MyArrayValueScanner
+_, err := db.QueryOne(pg.Scan(pg.Array(&dst)),
+    `SELECT array_agg(id) from generate_series(0, 10) AS id`)
+if err != nil {
+    panic(err)
+}
+fmt.Println(dst.sum) // Output: 55
+```
+
+---
+
+## 4. Working with JSONB
+
+### 4.1 Mapping JSONB to Go Types
+
+go-pg supports JSONB mapping to `json.RawMessage` or any type implementing `json.Marshaler` and `json.Unmarshaler`.
+
+```go
+import "encoding/json"
+
+type JSONData struct {
+    Attributes json.RawMessage `pg:",type:jsonb"`
+}
+```
+
+Or define custom types with `Scan` and `Value` methods implementing [`database/sql.Scanner`](https://golang.org/pkg/database/sql/#Scanner) and [`driver.Valuer`](https://golang.org/pkg/database/sql/driver/#Valuer) interfaces.
+
+### 4.2 Inserting and Querying JSONB
+
+```go
+jsonObj := JSONData{
+    Attributes: json.RawMessage(`{"foo":"bar"}`),
+}
+_, err := db.Model(&jsonObj).Insert()
+if err != nil {
+    panic(err)
+}
+
+fetched := new(JSONData)
+err = db.Model(fetched).Where("id = ?", someID).Select()
+if err != nil {
+    panic(err)
+}
+
+var attrs map[string]string
+json.Unmarshal(fetched.Attributes, &attrs)
+fmt.Println(attrs["foo"])  // Output: bar
+```
+
+### 4.3 Handling JSONB Escaping
+
+go-pg internally takes care of escaping special characters according to PostgreSQL's expectations.
+
+---
+
+## 5. Using Hstore Key-Value Store Type
+
+### 5.1 About Hstore
+
+Hstore provides a simple key-value store in a single PostgreSQL column, ideal for storing arbitrary string maps.
+
+### 5.2 Mapping Hstore to Go
+
+Use `pg.Hstore` wrapper for fields of type `map[string]string`:
+
+```go
+import "github.com/go-pg/pg/v10/types"
+
+type Config struct {
+    Settings map[string]string `pg:",type:hstore"`
+}
+
+// Or explicitly wrap your map
+hstoreValue := types.NewHstore(myMap)
+```
+
+### 5.3 Inserting and Selecting Hstore
+
+```go
+config := &Config{
+    Settings: map[string]string{"theme": "dark", "lang": "en"},
+}
+_, err := db.Model(config).Insert()
+if err != nil {
+    panic(err)
+}
+
+fetched := new(Config)
+err = db.Model(fetched).Where("id = ?", someID).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(fetched.Settings["theme"])  // Output: dark
+```
+
+### 5.4 Handling Hstore via `types.Hstore`
+
+- Use `types.NewHstore()` to create a value wrapper.
+- The underlying map must be `map[string]string`.
+- The wrapper handles marshalling/unmarshalling automatically.
+
+---
+
+## 6. Practical Tips and Best Practices
+
+- Always tag your slice fields with `pg:",array"` to enable array support.
+- Use `pg.Hstore` wrapper for dynamic key-value map fields.
+- For JSONB, use either `json.RawMessage` or implement `Scanner` and `Valuer` to customize behavior.
+- Test inserts and selects early to ensure your mappings work as expected.
+- Avoid nesting complex types inside arrays unless you understand how go-pg scans those (e.g., `[][]int` supports arrays of arrays).
+- When scanning arrays manually, consider implementing `ArrayValueScanner` for custom logic.
+
+---
+
+## 7. Common Issues & Troubleshooting
+
+<AccordionGroup title="Common Issues and Solutions">
+<Accordion title="Field Not Populating from Array Column">
+Check if your Go field has the `pg:",array"` tag and is a slice or array type. The tag is mandatory to marshal/unmarshal PostgreSQL arrays.
+</Accordion>
+<Accordion title="Hstore Scan or Append Errors">
+Ensure the Go type is `map[string]string` wrapped with `types.NewHstore()`. Passing incompatible types will result in unsupported type errors.
+</Accordion>
+<Accordion title="JSONB Data Not Unmarshalling Correctly">
+Verify that your Go type implements `json.Unmarshaler` or uses `json.RawMessage`. Also, check the database data format.
+</Accordion>
+</AccordionGroup>
+
+<Warning>
+If your arrays contain nil elements, verify you handle nils properly during scanning to avoid panics or incorrect zero-value assignments.
+</Warning>
+
+---
+
+## 8. Next Steps and Related Topics
+
+- Explore the [Defining Models and Basic CRUD](https://your-docs-link/guides/getting-started/define-models-crud) guide to solidify model mapping concepts.
+- Learn about [Advanced Queries and Model Relationships](https://your-docs-link/guides/working-with-data/advanced-queries-relations) to join and load related data efficiently.
+- Consult the [Configuration & Connecting to PostgreSQL](https://your-docs-link/getting-started/setup/configuration-setup) guide for connection setup best practices.
+- For handling composite and custom PostgreSQL types, see the [Composite and Custom Types](https://your-docs-link/api-reference/advanced-types-and-query-features/composite-and-custom-types) documentation.
+
+---
+
+## 9. Summary Example Code
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/types"
+)
+
+type Item struct {
+    Id       int64
+    Emails   []string          `pg:",array"`
+    Numbers  [][]int           `pg:",array"`
+    Metadata json.RawMessage   `pg:",type:jsonb"`
+    Config   map[string]string `pg:",type:hstore"`
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        Addr:     ":5432",
+        User:     "user",
+        Password: "pass",
+        Database: "mydb",
+    })
+    defer db.Close()
+
+    item := &Item{
+        Id:     1,
+        Emails: []string{"one@example.com", "two@example.com"},
+        Numbers: [][]int{{1, 2}, {3, 4}},
+        Metadata: json.RawMessage(`{"foo":"bar"}`),
+        Config: map[string]string{"theme": "dark", "lang": "en"},
+    }
+
+    _, err := db.Model(item).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    fetched := new(Item)
+    err = db.Model(fetched).Where("id = ?", 1).Select()
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("Emails: %v\n", fetched.Emails)
+    fmt.Printf("Numbers: %v\n", fetched.Numbers)
+    fmt.Printf("Metadata: %s\n", fetched.Metadata)
+    fmt.Printf("Config: %v\n", fetched.Config)
+}
+```
+
+This example integrates arrays, JSONB, and hstore types within a single struct and performs insert and select operations demonstrating go-pg’s seamless data mapping.

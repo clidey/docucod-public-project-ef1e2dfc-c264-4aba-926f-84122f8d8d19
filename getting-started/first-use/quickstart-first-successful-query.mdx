@@ -1,0 +1,311 @@
+---
+title: "Quickstart: Your First Successful Query"
+description: "Walks users from defining a Go struct, creating a schema/table, inserting a record, and running a simple select. Uses practical examples to demonstrate round-trip ORM functionality."
+---
+
+# Quickstart: Your First Successful Query
+
+This guide walks you through the essential steps to perform your first successful database query using go-pg, the PostgreSQL client and ORM for Go. By following a concrete, practical example, you will define your Go data models, create corresponding database tables, insert records, and run select queries with ORM-powered relations.
+
+---
+
+## 1. Define Your Go Structs (Models)
+
+Your journey begins by defining Go structs that map to your database tables. These structs represent the shape of your data and establish relationships using go-pg ORM annotations.
+
+```go
+package main
+
+// User represents a user in the system
+// with a primary key and a list of email addresses.
+type User struct {
+    Id     int64
+    Name   string
+    Emails []string
+}
+
+// Story represents a story authored by a user
+// with a has-one relation to the User struct.
+type Story struct {
+    Id       int64
+    Title    string
+    AuthorId int64
+    Author   *User `pg:"rel:has-one"`
+}
+```
+
+### Key Points
+- Use struct tags like `pg:",pk"` to specify primary keys.
+- Define relations via pointers (has-one) or slices (has-many).
+- Keep your models simple; relations let ORM fetch related data effortlessly.
+
+---
+
+## 2. Create Database Tables from Your Models
+
+go-pg provides methods to generate database tables directly from Go structs. This avoids writing SQL schema manually during development and testing.
+
+```go
+import (
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/orm"
+)
+
+func createSchema(db *pg.DB) error {
+    models := []interface{}{
+        (*User)(nil),
+        (*Story)(nil),
+    }
+
+    for _, model := range models {
+        err := db.Model(model).CreateTable(&orm.CreateTableOptions{
+            Temp: true, // Creates temporary tables useful for tests
+        })
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+```
+
+### Tips
+- Use `Temp: true` for temporary tables during testing.
+- For production, omit `Temp: true` and carefully manage migrations.
+
+---
+
+## 3. Connect to Your PostgreSQL Database
+
+Establish a connection to your PostgreSQL server with minimal configuration.
+
+```go
+import "github.com/go-pg/pg/v10"
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User:     "postgres",
+        Password: "yourpassword",   // add if required
+        Database: "yourdb",         // specify your DB
+    })
+    defer db.Close()
+
+    // Create tables from models
+    err := createSchema(db)
+    if err != nil {
+        panic(err)
+    }
+
+    // Proceed with inserting and querying data
+}
+```
+
+### Verification
+- Ensure your PostgreSQL instance is running and accessible.
+- Use correct user credentials and database name.
+
+---
+
+## 4. Insert Your First Record
+
+With your schema in place, insert a new record using ORM's `Insert` method.
+
+```go
+user1 := &User{
+    Name:   "admin",
+    Emails: []string{"admin1@admin", "admin2@admin"},
+}
+_, err := db.Model(user1).Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+### Notes
+- After insertion, `user1.Id` is automatically populated with the generated primary key.
+- You can insert multiple records at once by passing multiple models to `.Insert()` or use slices.
+
+---
+
+## 5. Run Your First Select Query
+
+Fetch your inserted records using `.Select()`. You can retrieve single or multiple entries.
+
+### Select By Primary Key
+
+```go
+user := &User{Id: user1.Id} // ID set from inserted record
+err = db.Model(user).WherePK().Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(user)
+```
+
+### Select All Records
+
+```go
+var users []User
+err = db.Model(&users).Select()
+if err != nil {
+    panic(err)
+}
+fmt.Println(users)
+```
+
+---
+
+## 6. Query with Joined Relations
+
+go-pg supports ORM relations, so you can retrieve related data in one go.
+
+```go
+story := &Story{
+    Title:    "Cool story",
+    AuthorId: user1.Id,
+}
+_, err = db.Model(story).Insert()
+if err != nil {
+    panic(err)
+}
+
+// Select story including the related author
+result := new(Story)
+err = db.Model(result).
+    Relation("Author").
+    Where("story.id = ?", story.Id).
+    Select()
+if err != nil {
+    panic(err)
+}
+
+fmt.Println(result)
+```
+
+### Explanation
+- `Relation("Author")` loads the associated User struct.
+- This generates SQL JOIN under the hood, returning a rich data structure.
+
+---
+
+## 7. Complete Example
+
+Putting it all together, here is a minimal working example:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+    Id     int64
+    Name   string
+    Emails []string
+}
+
+type Story struct {
+    Id       int64
+    Title    string
+    AuthorId int64
+    Author   *User `pg:"rel:has-one"`
+}
+
+func createSchema(db *pg.DB) error {
+    models := []interface{}{
+        (*User)(nil),
+        (*Story)(nil),
+    }
+
+    for _, model := range models {
+        err := db.Model(model).CreateTable(&orm.CreateTableOptions{
+            Temp: true,
+        })
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User:     "postgres",
+        Password: "yourpassword",
+        Database: "yourdb",
+    })
+    defer db.Close()
+
+    err := createSchema(db)
+    if err != nil {
+        panic(err)
+    }
+
+    user1 := &User{
+        Name:   "admin",
+        Emails: []string{"admin1@admin", "admin2@admin"},
+    }
+    _, err = db.Model(user1).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    story1 := &Story{
+        Title:    "Cool story",
+        AuthorId: user1.Id,
+    }
+    _, err = db.Model(story1).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    story := new(Story)
+    err = db.Model(story).
+        Relation("Author").
+        Where("story.id = ?", story1.Id).
+        Select()
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("Story: %+v\n", story)
+    fmt.Printf("Author: %+v\n", story.Author)
+}
+```
+
+---
+
+## Troubleshooting Tips
+
+- **Connection Issues:** Confirm PostgreSQL is running and network settings (firewall, ports) allow connections.
+- **Schema Creation Fails:** Verify permissions to create tables and the `Temp` option for temporary tables.
+- **Insert Errors:** Make sure primary keys are unique or compatible with auto-generated values.
+- **Select Queries Return No Rows:** Double-check primary key values and that data was inserted successfully.
+
+---
+
+## Next Steps
+
+- Explore defining model relationships (has one, has many, many to many).
+- Learn advanced query building and filtering.
+- Understand schema migrations for production.
+- Read about connection pooling and performance optimizations.
+
+Refer to the [Defining Models and Basic CRUD](../guides/getting-started/define-models-crud) and [Advanced Queries and Model Relationships](../guides/working-with-data/advanced-queries-relations) for deeper understanding.
+
+---
+
+## Additional References
+
+- [go-pg GitHub Repository](https://github.com/go-pg/pg)
+- [Official Documentation](https://pg.uptrace.dev)
+- [Installation and Setup Guide](../getting-started/setup/installing-go-pg)
+- [Configuration & Connecting to PostgreSQL](../getting-started/setup/configuration-setup)
+
+
+---
+
+**Congratulations!** You've run your first successful ORM query with go-pg. You're now ready to build more complex queries and start unlocking PostgreSQL's power with Go.

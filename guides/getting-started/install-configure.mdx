@@ -1,0 +1,332 @@
+---
+title: "Installation and Configuration"
+description: "A step-by-step guide to installing go-pg, preparing your Go project for use with the ORM, and connecting to a PostgreSQL database. Covers module setup, import patterns, and essential configuration options for reliable connectivity."
+---
+
+# Installation and Configuration
+
+A step-by-step guide to installing go-pg, preparing your Go project for use with the ORM, and connecting to a PostgreSQL database. This guide focuses on setting up your Go environment, installing the correct go-pg module version, configuring connection options, and ensuring reliable connectivity with your PostgreSQL backend.
+
+---
+
+## 1. Workflow Overview
+
+### Task Description
+This guide helps you install the go-pg PostgreSQL client and ORM library into your Go project and configure it to connect reliably to your PostgreSQL database. It walks you through module setup, proper package imports, and establishing connection options for smooth integration.
+
+### Prerequisites
+- Go installed on your system (Go modules enabled)
+- Access to a PostgreSQL database server (local or remote)
+- Basic knowledge of Go programming and module usage
+- Network connectivity to your PostgreSQL server
+
+### Expected Outcome
+By following this guide, you will have:
+- Successfully installed the correct version of go-pg v10
+- Configured your Go module to use go-pg
+- Established a reliable connection to PostgreSQL with validated parameters
+- Prepared your project to start defining models and running queries
+
+### Time Estimate
+Approximate time to complete: 10-15 minutes
+
+### Difficulty Level
+Beginner to Intermediate
+
+---
+
+## 2. Step-by-Step Instructions
+
+### Step 1: Initialize or Update Your Go Module
+Ensure your project is using Go modules. Inside your project directory, run:
+
+```bash
+go mod init your/project/name # if not already initialized
+```
+
+This sets up the module system for dependency management.
+
+
+### Step 2: Install go-pg v10
+Install the go-pg ORM by running:
+
+```bash
+go get github.com/go-pg/pg/v10
+```
+
+This command pulls the latest v10 version, essential because v10 uses a version suffix in the import path.
+
+
+#### Verify Installation
+Check that your `go.mod` includes `github.com/go-pg/pg/v10` and `go.sum` is updated.
+
+
+### Step 3: Import go-pg in Your Go Code
+Start using the library by importing it explicitly with the version suffix:
+
+```go
+import (
+    "github.com/go-pg/pg/v10"
+)
+```
+
+Avoid using generic paths without `/v10` to prevent version mismatch errors.
+
+
+### Step 4: Configure Connection Options
+Create a new `pg.Options` structure to define how your client connects. At minimum, define:
+
+- `Addr`: Network address (hostname and port) of your PostgreSQL server.
+- `User`: Your database username.
+- `Password`: Your database password.
+- `Database`: The name of your PostgreSQL database.
+
+Example configuration:
+
+```go
+opts := &pg.Options{
+    Addr:     "localhost:5432",
+    User:     "postgres",
+    Password: "yourpassword",
+    Database: "yourdb",
+}
+```
+
+
+### Step 5: Initialize the Database Client
+Use the options to create a new DB instance:
+
+```go
+db := pg.Connect(opts)
+```
+
+This returns a `*pg.DB` that manages connection pooling and query execution.
+
+
+### Step 6: Validate the Connection
+Verify connectivity by pinging your database:
+
+```go
+err := db.Ping(context.Background())
+if err != nil {
+    log.Fatalf("Failed to connect to database: %v", err)
+}
+```
+
+Successful ping confirms correct installation and configuration.
+
+
+### Step 7: Use Environment Variables (Optional but Recommended)
+You can rely on environment variables for sensitive info instead of hardcoding:
+
+- `PGHOST` (default: localhost)
+- `PGPORT` (default: 5432)
+- `PGUSER` (default: postgres)
+- `PGPASSWORD` (default: postgres)
+- `PGDATABASE` (default: postgres)
+
+Go-pg automatically reads these if not set explicitly in options. This practice improves security and portability.
+
+
+### Step 8: (Optional) Use Connection URL for Configuration
+Instead of building `pg.Options` manually, you can parse a PostgreSQL connection URL:
+
+```go
+opts, err := pg.ParseURL("postgres://user:password@localhost:5432/dbname?sslmode=disable")
+if err != nil {
+    log.Fatalf("Error parsing URL: %v", err)
+}
+db := pg.Connect(opts)
+```
+
+Supported URL components:
+- Scheme: must be "postgres" or "postgresql"
+- Host and port
+- User credentials
+- Database name
+- SSL mode (e.g., disable, require, verify-full)
+- Connection timeout
+
+
+### Step 9: Customize Advanced Options (Optional)
+Explore other configuration options for your use case:
+
+| Option                 | Purpose                                                                                      | Default                     |
+|------------------------|----------------------------------------------------------------------------------------------|-----------------------------|
+| PoolSize               | Maximum open connections                                                                    | 10 × number of CPUs          |
+| MinIdleConns           | Minimum idle connections kept alive                                                          | 0                           |
+| MaxConnAge             | Duration after which connections are retired                                                | 0 (no max age)              |
+| PoolTimeout            | Time to wait for free connection before error                                               | 30s or ReadTimeout + 1s     |
+| IdleTimeout            | Time after which idle connections are closed                                               | 5 min                       |
+| TLSConfig              | For secure connections over TLS                                                            | nil (no TLS)                |
+| DialTimeout            | Timeout for establishing new connections                                                   | 5s                         |
+
+Example:
+
+```go
+opts.MaxConnAge = time.Minute * 10
+opts.PoolSize = 20
+```
+
+Customize as per performance and environment requirements.
+
+
+## 3. Examples & Code Samples
+
+### Minimal Example to Connect and Ping
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/go-pg/pg/v10"
+)
+
+func main() {
+    opts := &pg.Options{
+        Addr:     "localhost:5432",
+        User:     "postgres",
+        Password: "yourpassword",
+        Database: "yourdb",
+    }
+
+    db := pg.Connect(opts)
+    defer db.Close()
+
+    err := db.Ping(context.Background())
+    if err != nil {
+        fmt.Printf("Failed to connect: %v\n", err)
+        return
+    }
+
+    fmt.Println("Successfully connected to PostgreSQL with go-pg v10!")
+}
+```
+
+
+### Using ParseURL
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/go-pg/pg/v10"
+)
+
+func main() {
+    dsn := "postgres://postgres:yourpassword@localhost:5432/yourdb?sslmode=disable"
+    opts, err := pg.ParseURL(dsn)
+    if err != nil {
+        fmt.Printf("Invalid connection URL: %v\n", err)
+        return
+    }
+
+    db := pg.Connect(opts)
+    defer db.Close()
+
+    if err := db.Ping(context.Background()); err != nil {
+        fmt.Printf("Ping failed: %v\n", err)
+        return
+    }
+
+    fmt.Println("Connected successfully!")
+}
+```
+
+## 4. Troubleshooting & Tips
+
+### Common Issues
+
+- **Incorrect Import Path:** Always use `github.com/go-pg/pg/v10`. Missing `/v10` suffix causes import errors.
+
+- **Connection Failures:** Verify PostgreSQL is running and accessible at the specified `Addr`. Use correct credentials.
+
+- **Unsupported URL Scheme:** Use only `postgres` or `postgresql` in the connection URL.
+
+- **Missing Database Name:** When parsing URL, ensure a database name is provided.
+
+- **TLS Misconfiguration:** Check your `TLSConfig` and `sslmode` settings to match the server security requirements.
+
+- **Pool Exhaustion Errors:** If your application opens many connections, consider increasing `PoolSize` and setting proper `PoolTimeout`.
+
+### Best Practices
+
+- Use environment variables for sensitive credentials instead of hardcoding.
+
+- Adjust connection pool parameters to suit your workload (high concurrency needs bigger pool).
+
+- Test connection settings with `Ping` to catch issues early.
+
+- Use connection URLs for easier maintenance when deploying across environments.
+
+
+## 5. Next Steps & Related Content
+
+- After successful installation and connection configuration, proceed to the [Defining Models and Basic CRUD](https://your-docs-domain/guides/getting-started/define-models-crud) guide to start working with database models.
+
+- For optimizing connection reliability and error handling, see the [Connection Pooling and Reliability](https://your-docs-domain/guides/performance-best-practices/connection-pooling) page.
+
+- Troubleshoot common issues during setup with [Troubleshooting Common Setup Issues](https://your-docs-domain/getting-started/first-use/troubleshooting-common-setup-issues).
+
+- Deepen your understanding of connection options and setup in the [Configuration & Connecting to PostgreSQL](https://your-docs-domain/getting-started/setup/configuration-setup) guide.
+
+---
+
+# Diagram: go-pg Connection Establishment and Pool Interaction
+
+```mermaid
+flowchart TD
+    A[Start go-pg Client Initialization] --> B[Load go-pg Options]
+    B --> C{Are Options Complete?}
+    C -->|Yes| D[Initialize Connection Pool]
+    C -->|No| E[Use Defaults or Env Variables]
+    E --> D
+    D --> F[Establish Network Connection to PostgreSQL]
+    F --> G{Connection Successful?}
+    G -->|Yes| H[Mark Connection as Initialized]
+    G -->|No| I[Return Error and Retry if Enabled]
+    H --> J[Add Connection to Pool]
+    J --> K[Ready for Queries]
+    I --> L[Log and Handle Dial Errors]
+
+    click B href "/api-reference/core-db-interfaces/db-connection-and-configuration" "Go-pg Options Reference"
+    click D href "/overview/architecture-integration/architecture-diagram" "Architecture Diagram"
+    click F href "/getting-started/setup/configuration-setup" "Configuration & Connecting Guide"
+
+    classDef error fill:#fbb,stroke:#900,stroke-width:2px;
+    class I,L error;
+```
+
+---
+
+<Check>
+Ensure you install go-pg using the v10 module suffix and configure your connection parameters accurately before initializing your database client.
+</Check>
+
+<Info>
+Use `pg.ParseURL` for convenient connection string parsing, supporting SSL modes and application naming.
+</Info>
+
+<Warning>
+Avoid hardcoding sensitive credentials; prefer environment variables to secure your database access details.
+</Warning>
+
+---
+
+## Source Code Reference
+
+For internal connection pool behavior and setup details, refer to the following [go-pg GitHub files](https://github.com/go-pg/pg/tree/main/internal/pool):
+
+- `options.go` (connection options setup and defaults)
+- `pool.go` (connection pooling management)
+- `pool_sticky.go` and `pool_single.go` (pooling variants handling)
+
+These files govern how connections are created, managed, and reused under the hood for connection optimization.
+
+---
+
+Thank you for choosing go-pg. Start building your Go applications with high-performance, full-featured PostgreSQL support today!

@@ -1,0 +1,215 @@
+---
+title: "Troubleshooting Common Setup Issues"
+description: "Lists the most frequent issues encountered during installation and first run—such as version mismatches, connection failures, or import mistakes—and how to resolve them quickly."
+---
+
+# Troubleshooting Common Setup Issues
+
+This guide helps you quickly identify and resolve the most frequent issues encountered during the installation and first run of go-pg. Whether you face version mismatches, connection failures, or import mistakes, this practical troubleshooting workflow will get you back on track efficiently.
+
+---
+
+## 1. Installation-Related Issues
+
+### 1.1 Import Errors or Version Conflicts
+
+If you encounter errors when running `go mod tidy` or during compilation, verify the following:
+
+- Ensure you import the correct go-pg module path with version suffix `v10`:
+
+```go
+import "github.com/go-pg/pg/v10"
+```
+
+- Check your `go.mod` to confirm that `github.com/go-pg/pg/v10` is listed explicitly.
+
+- Run `go get github.com/go-pg/pg/v10` to fetch the latest version.
+
+- Avoid mixing versions (for example, `v8` and `v10`) to prevent incompatible API errors.
+
+<Tip>
+Version suffixes in the import path (`/v10`) are mandatory from go-pg v10 onwards. Missing this suffix will cause import errors.
+</Tip>
+
+### 1.2 Common Installation Errors
+
+- **Error: cannot find package `github.com/go-pg/pg`** without `/v10` suffix.
+  - Fix: Update import paths and dependencies to include `/v10`.
+
+- **Error: ambiguous selector or incompatible types**
+  - Fix: Clean Go module cache with `go clean -modcache` and re-run `go mod tidy`.
+
+- **Mismatch between `go-pg` version and Go compiler version**
+  - Fix: Confirm supported Go versions in the Prerequisites & System Requirements guide.
+
+> Refer to the [Installing go-pg](https://github.com/go-pg/pg/blob/main/docs/getting-started/setup/installing-go-pg.mdx) page for detailed installation steps.
+
+---
+
+## 2. Connection Failures
+
+Common errors related to connecting to your PostgreSQL server usually involve misconfiguration or network problems.
+
+### 2.1 Validate PostgreSQL Connection Settings
+
+- Confirm PostgreSQL is running and accessible.
+- Verify hostname, port, username, password, and database name.
+- Check your connection code snippet matches expected parameters:
+
+```go
+db := pg.Connect(&pg.Options{
+    Addr:     "localhost:5432",
+    User:     "youruser",
+    Password: "yourpassword",
+    Database: "yourdb",
+})
+```
+
+- Use `ping` or database client tools to test connectivity independently.
+
+### 2.2 Common Connection Errors and Remedies
+
+| Error Message                            | Cause                              | Resolution                                   |
+|------------------------------------------|---------------------------------|----------------------------------------------|
+| `pg: database is closed`                 | Connection closed incorrectly     | Ensure you are not using closed `*pg.DB`    |
+| `pq: password authentication failed`    | Invalid credentials               | Check username/password in connection config|
+| `dial tcp: connect: connection refused` | PostgreSQL server down or firewall   | Start PostgreSQL; confirm port is open      |
+| `connection timeout`                     | Network latency or firewall      | Adjust timeout settings; check network/firewall|
+
+<Tip>
+Use the official PostgreSQL client or `psql` command line to confirm connectivity and isolate whether the issue is with go-pg or the network.
+</Tip>
+
+> Details on configuration and connection are available at [Configuration & Connecting to PostgreSQL](https://github.com/go-pg/pg/blob/main/docs/getting-started/setup/configuration-setup.mdx).
+
+---
+
+## 3. Runtime and Pooling Errors
+
+If your application experiences errors involving connection pooling or runtime failures:
+
+### 3.1 Detect Pool Exhaustion or Timeouts
+
+Look for errors such as:
+
+```
+pg: connection pool timeout
+pg: database is closed
+```
+
+These indicate that your connection pool size may be insufficient or connections are not being released properly.
+
+### 3.2 Best Practices for Pool Configuration
+
+- Set an appropriate pool size in your `pg.Options`:
+
+```go
+db := pg.Connect(&pg.Options{
+    PoolSize: 10, // adjust as needed
+    // other options...
+})
+```
+
+- If using transactions or long-running queries, ensure connections are closed or released promptly.
+- Monitor your pool statistics with `db.Pool().Stats()` to track Hits, Misses, and Timeouts.
+
+### 3.3 Handling “Database is Closed” Errors
+
+This error often occurs when attempts are made to use the database after calling `db.Close()`.
+
+- Ensure `db.Close()` is called exactly once, typically during graceful application shutdown.
+- Avoid using a closed database handle.
+
+### 3.4 Common Pitfalls
+
+- Attempting concurrent queries on a single transaction or statement after close.
+- Not handling errors returned by connection or transaction methods may leave connections in a bad state.
+
+<Tip>
+Logging and monitoring connection pool stats during development helps surface pooling-related problems early.
+</Tip>
+
+---
+
+## 4. Struct or Field Mapping Issues
+
+If you see unexpected behavior with your model mapping or schema migrations:
+
+- Confirm struct tags follow correct `pg` ORM conventions, e.g., `pg:"column_name"`.
+- Use [Defining Models and Basic CRUD](https://github.com/go-pg/pg/blob/main/docs/guides/getting-started/define-models-crud.mdx) for examples.
+- Verify that you have synced your database schema if using migrations.
+
+---
+
+## 5. Troubleshooting Workflow Example
+
+Here's how to quickly resolve a connection failure:
+
+<Steps>
+<Step title="Verify Environment Compatibility">
+Confirm your Go version and PostgreSQL server meet the requirements in the [Prerequisites & System Requirements](https://github.com/go-pg/pg/blob/main/docs/getting-started/setup/prerequisites-system-requirements.mdx).
+</Step>
+<Step title="Check Dependency Versions">
+Run `go get github.com/go-pg/pg/v10` and ensure your import path uses `/v10` suffix.
+</Step>
+<Step title="Test Database Accessibility">
+Use `psql` or other clients to verify you can connect with the same credentials externally.
+</Step>
+<Step title="Validate Connection Code">
+Double-check your connection options and confirm no typos or missing fields.
+</Step>
+<Step title="Run a Minimal Query">
+Test with the simplest query `SELECT 1` to verify database handle is live.
+</Step>
+<Step title="Inspect Pool Statistics">
+Check `db.Pool().Stats()` for connection usage patterns and errors.
+</Step>
+<Step title="Review Logs and Error Messages">
+Enable detailed logs if needed to trace where failure happens.
+</Step>
+</Steps>
+
+---
+
+## 6. Additional Help & Support
+
+- Review the [go-pg GitHub repository](https://github.com/go-pg/pg) issues and discussions.
+- Ask questions or search in Go and PostgreSQL community forums.
+- Refer to the [FAQ section](https://github.com/go-pg/pg/blob/main/docs/faq/getting-started-issues/installation-problems.mdx) for common user questions.
+
+---
+
+## Summary Table of Common Errors
+
+| Error Message                          | Likely Cause                         | Recommended Fix                         |
+|---------------------------------------|------------------------------------|----------------------------------------|
+| `cannot find package`                  | Wrong or missing import path        | Use correct import: `/v10` suffix       |
+| `pg: database is closed`               | Using closed DB handle              | Do not use after `db.Close()`           |
+| `connection refused`                   | PostgreSQL not running or firewall | Start DB and open port                  |
+| Authentication failures               | Wrong credentials                  | Verify username/password                |
+| `connection pool timeout`              | Pool exhausted or blocking calls    | Increase pool size, release connections |
+
+
+---
+
+This guide consolidates actionable solutions to setup roadblocks, enabling you to focus on building your Go applications with confidence using go-pg.
+
+---
+
+<AccordionGroup title="Quick Links to Relevant Documentation">
+<Accordion title="Installing go-pg">
+[Installing go-pg](https://github.com/go-pg/pg/blob/main/docs/getting-started/setup/installing-go-pg.mdx) — step-by-step installation instructions.
+</Accordion>
+<Accordion title="Configuration & Connecting to PostgreSQL">
+[Configuration & Connecting to PostgreSQL](https://github.com/go-pg/pg/blob/main/docs/getting-started/setup/configuration-setup.mdx) — guides establishing successful connections.
+</Accordion>
+<Accordion title="Prerequisites & System Requirements">
+[Prerequisites & System Requirements](https://github.com/go-pg/pg/blob/main/docs/getting-started/setup/prerequisites-system-requirements.mdx) — necessary environment details.
+</Accordion>
+<Accordion title="Defining Models and Basic CRUD">
+[Defining Models and Basic CRUD](https://github.com/go-pg/pg/blob/main/docs/guides/getting-started/define-models-crud.mdx) — to troubleshoot struct mapping and ORM issues.
+</Accordion>
+<Accordion title="FAQ and Common Issues">
+[FAQ on Installation Problems](https://github.com/go-pg/pg/blob/main/docs/faq/getting-started-issues/installation-problems.mdx) — answers to frequent questions.
+</Accordion>
+</AccordionGroup>

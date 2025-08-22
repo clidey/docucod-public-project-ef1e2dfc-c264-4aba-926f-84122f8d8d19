@@ -1,0 +1,102 @@
+---
+title: "Key Features at a Glance"
+description: "Survey go-pg’s most important features: comprehensive SQL and ORM support, advanced data type handling, transactions, prepared statements, composable queries, connection pooling, and more. Quickly identify what the library does out-of-the-box to match your application's needs."
+---
+
+# Key Features at a Glance
+
+Explore the standout capabilities of **go-pg**, a robust PostgreSQL client and ORM for Go that streamlines database interaction while delivering advanced features tailored to Go developers' needs.
+
+---
+
+## Comprehensive SQL & ORM Support
+
+Harness the best of both worlds with go-pg’s dual approach — intuitive ORM workflows alongside flexible SQL query building:
+
+- **Rich ORM Patterns:** Define models and relationships easily with support for `has one`, `belongs to`, `has many`, and `many to many` associations, including composite and multi-column primary keys.
+- **Composable Queries:** Build complex queries with composability, enabling subqueries, grouping, distinct clauses, locking, and unions directly from Go code.
+- **Raw SQL and Query Building:** Execute raw SQL or use the query builder to craft safe, parameterized queries while benefiting from automatic struct binding.
+
+## Advanced Data Type Handling
+
+Go beyond standard types with built-in support for sophisticated PostgreSQL data structures:
+
+- **Basic and Nullable Types:** Seamless handling of Go’s basic types, `sql.Null*` variants, and custom nullable time support.
+- **Arrays, JSONB, and Hstore:** Map Go slices, maps, and structs to PostgreSQL’s multidimensional arrays, `jsonb` columns, and `hstore` key-value stores.
+- **Composite & Custom Types:** Define and use PostgreSQL composite types for structured data, enhancing type safety and expressiveness.
+
+## Transactions & Prepared Statements
+
+Ensure reliability and performance in your database operations:
+
+- **Robust Transaction Support:** Encapsulate multiple operations in explicit transactions with rollback and commit semantics.
+- **Prepared Statements:** Execute repeated queries efficiently using statement preparation, reducing overhead and improving latency.
+
+## Connection Pooling & Reliability
+
+Go-pg automates connection management to optimize resource use under load:
+
+- **Automatic Connection Pooling:** Effortlessly manage multiple database connections with an intelligent pool.
+- **Circuit Breaker & Retry Mechanisms:** Improve resilience with built-in circuit breaking and query retry on network errors.
+
+## Soft Deletes & Bulk Operations
+
+Build maintainable, scalable applications with features that reduce boilerplate:
+
+- **Soft Deletes:** Mark rows as deleted without physical removal, allowing easy recovery and audit trails.
+- **Bulk Inserts, Updates & Deletes:** Efficiently handle batch database operations to speed up data modification at scale.
+
+## Useful Utilities & Optimizations
+
+- **Count Estimation:** Use PostgreSQL’s `EXPLAIN` to estimate row counts for faster pagination and UI responsiveness.
+- **Common Table Expressions (CTEs):** Write complex queries using `WITH` clauses to improve readability and maintainability.
+- **Hooks (Before/After):** Define lifecycle hooks for scans and CRUD operations, enabling clean extension points for advanced workflows.
+
+---
+
+## Real-World Example: Query with Relations
+
+Retrieve a story with its author in one query with automatic join and mapping:
+
+```go
+story := new(Story)
+err := db.Model(story).
+	Relation("Author").
+	Where("story.id = ?", storyID).
+	Select()
+if err != nil {
+	panic(err)
+}
+```
+
+This example demonstrates how go-pg removes the friction of manually writing joins and scan code, letting you focus on your application logic.
+
+---
+
+## Why This Matters
+
+Whether you are building simple CRUD services or complex backends with sophisticated data models, go-pg offers a rich toolkit that blends direct SQL power with ORM convenience. Its advanced features help maximize developer productivity, maintain code clarity, and deliver performant, resilient applications.
+
+---
+
+## Next Steps
+
+Start by exploring the following documentation pages to deepen your understanding:
+
+- [What is go-pg?](https://pg.uptrace.dev/overview/product-intro-core-concepts/what-is-go-pg) – Understand go-pg’s purpose and value.
+- [Defining Models and Basic CRUD](https://pg.uptrace.dev/guides/getting-started/define-models-crud) – Learn to create models and perform basic data operations.
+- [Working with Advanced Queries](https://pg.uptrace.dev/guides/working-with-data/advanced-queries-relations) – Explore complex query building and relational mappings.
+- [Configuration & Connecting to PostgreSQL](https://pg.uptrace.dev/getting-started/setup/configuration-setup) – Set up and connect your database safely.
+
+
+---
+
+Feel empowered to leverage go-pg’s capabilities with confidence and accelerate your Go backend development with PostgreSQL.
+
+---
+
+## Helpful Tip
+
+<Tip>
+To maximize query performance, combine eager-loading using `.Relation()` with selective columns via `.Column()` to fetch only the data you need.
+</Tip>

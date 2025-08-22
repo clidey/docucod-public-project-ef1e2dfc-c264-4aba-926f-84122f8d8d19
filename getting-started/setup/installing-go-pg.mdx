@@ -1,0 +1,178 @@
+---
+title: "Installing go-pg"
+description: "Step-by-step instructions for adding go-pg to your Go project using Go modules, as well as verifying the correct package version. Covers common pitfalls for first-time users."
+---
+
+# Installing go-pg
+
+This guide provides clear, actionable steps to add the go-pg PostgreSQL client and ORM to your Go project. You'll learn how to install go-pg using Go modules, verify the correct version, and avoid common pitfalls that first-time users often encounter.
+
+---
+
+## 1. Prerequisites
+
+Before proceeding, ensure you have the following:
+
+- **Go 1.18 or later** installed with module support enabled.
+- A working Go module initialized in your project (`go.mod` file).
+- Reliable internet access to fetch the module.
+
+If you have not yet initialized a Go module, run:
+
+```shell
+mkdir my-project
+cd my-project
+go mod init github.com/my/repo
+```
+
+This will create a new module ready to manage dependencies.
+
+<Tip>
+Using Go modules is essential, as go-pg requires it for proper versioning and dependency management.
+</Tip>
+
+---
+
+## 2. Installing go-pg
+
+To add go-pg to your module, run the following command in your project directory:
+
+```shell
+go get github.com/go-pg/pg/v10
+```
+
+- Note the explicit **`/v10`** suffix in the import path — this is critical for fetching the correct major version of go-pg.
+
+- Omitting `/v10` is a common mistake that results in resolving an older or incompatible version.
+
+This will download and add go-pg version 10 as a dependency in your `go.mod` file.
+
+<Tip>
+If you want to upgrade or ensure the latest patch version is used, run:
+
+```shell
+go get -u github.com/go-pg/pg/v10
+```
+
+This keeps your go-pg dependency current.
+</Tip>
+
+---
+
+## 3. Verifying Installation
+
+After installation, verify that go-pg is included correctly:
+
+1. Open your `go.mod` file and confirm a line similar to:
+
+```go
+require github.com/go-pg/pg/v10 v10.x.y
+```
+
+where `v10.x.y` represents the installed version.
+
+2. Add a simple import line to one of your source files:
+
+```go
+import "github.com/go-pg/pg/v10"
+```
+
+3. Run a minimal example to confirm that the package compiles and works as expected (see below).
+
+---
+
+## 4. Minimal Example to Confirm Setup
+
+Create a file `main.go` with the following content:
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/go-pg/pg/v10"
+)
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User: "postgres",
+	})
+	defer db.Close()
+
+	var n int
+	_, err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Connection successful, SELECT 1 returned:", n)
+}
+```
+
+Run:
+
+```shell
+go run main.go
+```
+
+Expected output:
+
+```
+Connection successful, SELECT 1 returned: 1
+```
+
+This confirms go-pg is installed and working.
+
+---
+
+## 5. Common Pitfalls and How to Avoid Them
+
+- **Missing `/v10` in import or `go get` command:**
+
+  - Always include `/v10` in your import path and `go get` command.
+
+- **Not initializing a Go module:**
+
+  - Running `go get` outside a module-enabled project may fail or place dependencies incorrectly.
+
+- **Outdated Go version:**
+
+  - Ensure you are using Go 1.18+ to avoid module compatibility issues.
+
+- **Incorrect package import:**
+
+  - Verify imports use `github.com/go-pg/pg/v10` exactly; do not omit the version suffix.
+
+- **Cached or stale dependencies:**
+
+  - Use `go clean -modcache` if you suspect corrupted or outdated cached modules.
+
+---
+
+## 6. Next Steps
+
+Now that go-pg is installed:
+
+- Proceed to the **[Configuration & Connecting to PostgreSQL](https://pg.uptrace.dev/getting-started/setup/configuration-setup)** guide to configure database credentials and establish active connections.
+- Explore the **[Quickstart: Your First Successful Query](https://pg.uptrace.dev/getting-started/first-use/quickstart-first-successful-query)** for hands-on query execution.
+- If you encounter issues, refer to **[Troubleshooting Common Setup Issues](https://pg.uptrace.dev/getting-started/first-use/troubleshooting-common-setup-issues)**.
+
+---
+
+## 7. Additional Resources
+
+- Official go-pg repository: [github.com/go-pg/pg](https://github.com/go-pg/pg)
+- Comprehensive documentation: [https://pg.uptrace.dev/](https://pg.uptrace.dev/)
+- Go modules documentation: [https://blog.golang.org/using-go-modules](https://blog.golang.org/using-go-modules)
+
+
+---
+
+By following these steps, you will have go-pg installed and ready to integrate PostgreSQL access into your Go applications efficiently and reliably.
+
+---
+
+<Check>
+Make sure your project is in module mode (`go mod init` run).
+Always include `/v10` in import paths and in your `go get` commands.
+Verify Go version compatibility (1.18 or newer).
+</Check>

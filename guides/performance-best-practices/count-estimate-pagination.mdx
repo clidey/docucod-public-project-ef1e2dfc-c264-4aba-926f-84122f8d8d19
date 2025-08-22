@@ -1,0 +1,230 @@
+---
+title: "Count Estimates and Efficient Pagination"
+description: "Tips for using go-pg’s count estimate feature and building scalable pagination into your applications, reducing query overhead and improving UX."
+---
+
+# Count Estimates and Efficient Pagination
+
+## Overview
+This guide helps you leverage go-pg's count estimate feature to obtain fast approximate row counts for large datasets and build scalable pagination logic that reduces query overhead while enhancing user experience.
+
+Counting total rows with SQL's `COUNT(*)` can be expensive on large tables or complex queries, leading to slower response times and increased database load. go-pg's `CountEstimate` method uses PostgreSQL's `EXPLAIN` feature to retrieve estimated row counts, offering a performant alternative when exact numbers are not critical.
+
+In this guide, you'll learn how to use this feature effectively, combine it with efficient pagination techniques, and ensure a smooth, responsive application behavior.
+
+---
+
+## Prerequisites
+- A working go-pg setup connected to a PostgreSQL database.
+- Familiarity with basic go-pg ORM queries and model definitions.
+- Understanding of standard pagination using `LIMIT` and `OFFSET` or keyset pagination (recommended for large datasets).
+
+---
+
+## Expected Outcome
+By following this guide you will:
+- Implement fast row count estimation using `CountEstimate`.
+- Integrate estimated counts into pagination UI and logic.
+- Avoid performance pitfalls of expensive count queries on large or complex data.
+
+---
+
+## Time Estimate
+10-20 minutes depending on your existing familiarity with SQL and go-pg.
+
+---
+
+## Step-by-Step Instructions
+
+### 1. Using `CountEstimate` to Get Row Count
+
+The `CountEstimate(threshold int)` method returns an approximate count of rows matching your query. It uses PostgreSQL's `EXPLAIN` command to estimate row counts and falls back to exact counts if the estimate is below the threshold.
+
+#### Steps:
+1. Create a go-pg query (using Model or Query builder) with your desired filters and conditions.
+2. Call the `CountEstimate()` method, providing a threshold (an integer above which the estimate is accepted without running a real count).
+3. Handle the returned count, which may be an estimate or an exact value.
+
+```go
+count, err := db.Model(&YourModel{}).
+	Where("status = ?", "active").
+	CountEstimate(10000) // threshold example
+if err != nil {
+	panic(err)
+}
+fmt.Printf("Estimated count: %d\n", count)
+```
+
+#### What happens under the hood:
+- If the EXPLAIN estimated rows exceed the threshold, `CountEstimate` returns that estimation immediately.
+- If less, it performs a real `COUNT(*)` query for accuracy.
+- The PostgreSQL function `_go_pg_count_estimate_v2` is created if it doesn’t exist, encapsulating this logic.
+
+<Tip>
+Choose a threshold that balances accuracy and performance based on your data size and query complexity. Large thresholds favor performance but with less precision.
+</Tip>
+
+---
+
+### 2. Implementing Pagination with Count Estimates
+
+Pagination typically requires total row counts to calculate page numbers. Using `CountEstimate` can improve performance:
+
+#### Example Workflow:
+1. Fetch the estimated total rows using `CountEstimate`.
+2. Use it to determine the total pages.
+3. Query the current page with `Limit` and `Offset` parameters.
+4. Display pagination UI using estimated counts.
+
+```go
+const pageSize = 20
+page := 3
+
+totalRows, err := db.Model(&YourModel{}).
+	Where("status = ?", "active").
+	CountEstimate(10000)
+if err != nil {
+	panic(err)
+}
+
+totalPages := (totalRows + pageSize - 1) / pageSize
+
+var results []YourModel
+err = db.Model(&results).
+	Where("status = ?", "active").
+	Limit(pageSize).
+	Offset((page - 1) * pageSize).
+	Select()
+if err != nil {
+	panic(err)
+}
+
+fmt.Printf("Displaying page %d of %d (estimated total rows: %d)\n", page, totalPages, totalRows)
+```
+
+<Note>
+For datasets with very volatile or skewed distributions, consider also implementing keyset pagination for optimal results.
+</Note>
+
+---
+
+### 3. Best Practices for Efficient Pagination
+
+- Prefer **keyset pagination** (using a unique index or timestamp) over offset pagination when handling very large tables or deep paging, to avoid skipping performance costs.
+- Cache or reuse estimated counts where practical, updating periodically rather than on every request.
+- Use reasonable thresholds in `CountEstimate` calls to avoid unnecessary exact counting for very large datasets.
+- Avoid applying heavy joins or grouping if counts can be done on filtered base tables for faster estimates.
+
+<Tip>
+Use the `WrapWith` and `With` methods to build efficient query wrappers if your query contains `GROUP BY` or complex clauses, allowing accurate counting with minimal overhead.
+</Tip>
+
+---
+
+### 4. Troubleshooting Common Issues
+
+- **Function `_go_pg_count_estimate_v2` missing errors:** go-pg automatically creates the PostgreSQL function on the first run. If this fails, verify the connection has proper privileges.
+- **Inaccurate estimates:** The EXPLAIN output depends on PostgreSQL statistics and might vary. Running `ANALYZE` on relevant tables can improve accuracy.
+- **CountEstimate errors with complex queries:** Queries with custom CTEs, UNIONs, or non-standard structures might require query wrapping or manual counting.
+
+<Tip>
+Use standard `Count()` for small or exact count needs and `CountEstimate()` primarily for large tables and approximate counts.
+</Tip>
+
+---
+
+## Additional Example
+
+Full example illustrating count estimate and pagination:
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/go-pg/pg/v10"
+)
+
+type Item struct {
+	ID     int64
+	Status string
+}
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User: "postgres",
+		Database: "mydb",
+	})
+	defer db.Close()
+
+	const pageSize = 10
+	page := 1
+
+	count, err := db.Model(&Item{}).
+		Where("status = ?", "active").
+		CountEstimate(10000)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Estimated total items: %d\n", count)
+
+	totalPages := (count + pageSize - 1) / pageSize
+
+	var items []Item
+	err = db.Model(&items).
+		Where("status = ?", "active").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Select()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Page %d of %d\n", page, totalPages)
+	for _, item := range items {
+		fmt.Printf("ID: %d, Status: %s\n", item.ID, item.Status)
+	}
+}
+```
+
+---
+
+## Related Content
+- [Advanced Queries and Model Relationships](guides/working-with-data/advanced-queries-relations.md): Explore building complex queries with relations.
+- [Defining Models and Basic CRUD](guides/getting-started/define-models-crud.md): Learn basic model setup and CRUD operations.
+- [Connection Pooling and Reliability](guides/performance-best-practices/connection-pooling.md): Understand tuning connection pools for performance.
+- [Timeouts, Error Handling, and Context Usage](guides/performance-best-practices/error-handling-ctx.md): Best practices on query cancellation and error resilience.
+
+---
+
+## Summary
+This guide demonstrated how to use go-pg's `CountEstimate` feature to retrieve fast, approximate row counts using PostgreSQL's EXPLAIN functionality, and how to integrate these estimates into efficient pagination strategies. It covered step-by-step instructions, code samples for common patterns, and best practices to optimize user experience and database performance when working with large datasets.
+
+Leveraging count estimates wisely can drastically reduce expensive counting queries and improve scalability without compromising motion in your paginated data views.
+
+For accurate count requirements, fall back on regular `Count()` queries. For large-scale systems aiming for speed and UX smoothness, combine `CountEstimate` and keyset pagination techniques.
+
+---
+
+## Troubleshooting
+- Ensure PostgreSQL function `_go_pg_count_estimate_v2` is created by go-pg on first invocation.
+- Run `ANALYZE` periodically in PostgreSQL to keep statistics fresh for better estimates.
+- Adjust thresholds according to dataset size and user tolerance for estimate accuracy.
+
+---
+
+## Next Steps
+- Explore go-pg's [Advanced Queries and Model Relationships](guides/working-with-data/advanced-queries-relations.md) guide to extend querying capabilities.
+- Learn about [Connection Pooling and Reliability](guides/performance-best-practices/connection-pooling.md) for production-grade usage.
+- Implement transactional workflows with [Managing Transactions](guides/application-patterns/transactions.md).
+
+---
+
+## References
+- [PostgreSQL Count Estimate Wiki](https://wiki.postgresql.org/wiki/Count_estimate)
+- [go-pg `CountEstimate` method source](https://github.com/go-pg/pg/blob/main/orm/count_estimate.go)
+- PostgreSQL `EXPLAIN` documentation: https://www.postgresql.org/docs/current/using-explain.html
+
+
+---

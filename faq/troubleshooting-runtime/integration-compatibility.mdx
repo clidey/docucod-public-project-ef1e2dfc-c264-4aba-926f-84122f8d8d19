@@ -1,0 +1,134 @@
+---
+title: "Are there compatibility issues with Go versions, PostgreSQL versions, or Bun?"
+description: "Details the maintenance status of go-pg, compatibility guarantees for supported Go/PostgreSQL versions, and guidance on migrating or integrating with Bun or other frameworks."
+---
+
+# Are there compatibility issues with Go versions, PostgreSQL versions, or Bun?
+
+This FAQ page provides clear guidance on compatibility concerns related to go-pg, including supported versions of Go and PostgreSQL, the maintenance status of go-pg, and recommendations regarding migration or integration with the newer Bun library.
+
+---
+
+## Maintenance Status of go-pg
+
+- **go-pg is currently in maintenance mode.** This means that only critical issues, such as security patches or serious bugs, are addressed.
+- No new feature development or enhancements are planned for go-pg.
+- All active development efforts have moved to the [Bun](https://bun.uptrace.dev/guide/pg-migration.html) project, which provides similar ORM capabilities but supports multiple databases including PostgreSQL, MySQL, MariaDB, and SQLite.
+
+<Tip>
+If starting a new project or considering future-proofing your application, evaluate Bun as the modern successor to go-pg, offering broader database support and active feature development.
+</Tip>
+
+---
+
+## Go Version Compatibility
+
+- go-pg supports the **two most recent versions of Go**.
+- It requires Go versions with full module support.
+- To ensure compatibility and smooth operation:
+  - Use a Go version from the last two major releases.
+  - Ensure your environment uses module-aware tooling (`go.mod` enabled).
+  - Example minimum setup:
+
+```bash
+# Initialize your module
+go mod init github.com/my/repo
+
+# Install go-pg v10 with explicit version suffix
+go get github.com/go-pg/pg/v10
+```
+
+<Tip>
+Using older Go versions outside the last two supported releases may cause compilation or runtime issues.
+Always check the Go version your project builds against.
+</Tip>
+
+---
+
+## PostgreSQL Version Compatibility
+
+- go-pg targets **PostgreSQL server versions that are actively supported by PostgreSQL's own release policies**.
+- It fully supports modern PostgreSQL features and types relevant for these versions, including advanced data types like arrays, JSONB, hstore, and composite types.
+- For the best stability and performance:
+  - Use PostgreSQL version 11 or newer where possible.
+  - Make sure your database version supports the PostgreSQL features you intend to use with go-pg.
+
+<Note>
+While go-pg may work with older PostgreSQL versions, some features or SQL syntax may not be available or fully supported.
+Test your targeted PostgreSQL version thoroughly.
+</Note>
+
+---
+
+## Using Bun with PostgreSQL: Migration and Integration Guidance
+
+- Bun is the actively developed library succeeding go-pg and includes similar PostgreSQL support plus additional databases.
+- Bun aims to provide:
+  - Modern Go ORM design.
+  - Support for multiple database backends.
+  - Improved feature set aligned with recent PostgreSQL capabilities and Go idioms.
+
+### Migration Considerations
+
+- If you currently use go-pg and consider migrating to Bun:
+  - Review Bun’s migration guide: [Bun pg Migration Guide](https://bun.uptrace.dev/guide/pg-migration.html)
+  - The guide covers mapping your existing models and queries to Bun's APIs.
+  - Migration is non-trivial and requires code adjustments; plan and test carefully.
+
+### Coexistence with Other Libraries
+
+- Since go-pg is maintained for stability, you can continue to use it alongside Bun during migration.
+- It is NOT recommended to mix ORM models or database connections from both libraries in the same transaction or database context.
+- Use Bun for new development to leverage active improvements.
+
+<Warning>
+Avoid mixing Bun and go-pg models in the same queries or transactions to prevent conflicts or unexpected behaviors.
+</Warning>
+
+---
+
+## Summary
+
+| Compatibility Aspect         | Recommendation & Notes                                            |
+|-----------------------------|-----------------------------------------------------------------|
+| **Go versions**              | Use two latest Go versions with module support.                 |
+| **PostgreSQL versions**      | Use PostgreSQL 11+ for best compatibility with feature support. |
+| **Maintenance status**       | go-pg is maintenance-only; Bun is the recommended successor.    |
+| **Migration to Bun**         | Follow Bun migration guide; don't mix with go-pg in queries.    |
+
+---
+
+## Related Documentation
+
+- [Bun Migration Guide](https://bun.uptrace.dev/guide/pg-migration.html)
+- [Installing go-pg](https://pg.uptrace.dev/getting-started/setup/installing-go-pg)
+- [Configuration & Connecting to PostgreSQL](https://pg.uptrace.dev/getting-started/setup/configuration-setup)
+- [Core Concepts & Terminology](https://pg.uptrace.dev/overview/product-intro-core-concepts/core-concepts-terminology)
+
+---
+
+## Practical Example: Verifying Go Version and Installing go-pg
+
+```bash
+# Check your Go version
+go version
+
+# Initialize a new Go module if not done
+go mod init github.com/my/repo
+
+# Install go-pg v10 explicitly (note the /v10 suffix)
+go get github.com/go-pg/pg/v10
+```
+
+## Further Help and Support
+
+For questions about compatibility, migration, or planning your project architecture:
+
+- Join the [go-pg Discord community](https://discord.gg/rWtp5Aj) to discuss with maintainers and other users.
+- Consult the official go-pg [documentation site](https://pg.uptrace.dev) for in-depth guides and references.
+
+<Tip>
+Planning a new project? Start with Bun for long-term support and cross-database compatibility.
+</Tip>
+
+---

@@ -1,0 +1,244 @@
+---
+title: "Timeouts, Error Handling, and Context Usage"
+description: "Strategies for using context for canceling queries, managing timeouts, and handling errors in a modern Go application, ensuring reliability and good resource management."
+---
+
+# Timeouts, Error Handling, and Context Usage
+
+Efficient and reliable database access requires managing query execution time, handling errors gracefully, and leveraging Go's context for cancellation and timeouts. This guide focuses exclusively on how go-pg uses context.Context to control query lifecycles, strategies for managing timeouts, and best practices for interpreting and reacting to errors. Following this guide ensures your applications remain responsive and resilient under load or failure conditions.
+
+---
+
+## Workflow Overview
+
+### Task Description
+This documentation explains how to use context for canceling queries and managing timeouts in go-pg, and how go-pg surfaces error information to enable robust error handling in Go applications.
+
+### Prerequisites
+- Have go-pg installed and configured with an active connection pool.
+- Basic understanding of Go's context package and database querying with go-pg.
+
+### Expected Outcome
+- Ability to use context.Context to control query timeouts and cancellations.
+- Understand how go-pg handles context cancellation and deadline expiration.
+- Recognize and respond correctly to common and PostgreSQL-specific errors.
+- Improve reliability by proper resource management during execution interruptions.
+
+### Time Estimate
+Approximately 15-30 minutes
+
+### Difficulty Level
+Intermediate
+
+---
+
+## Step-by-Step Instructions
+
+### 1. Using Context for Canceling Queries and Managing Timeouts
+
+All query-executing methods in go-pg accept a context variant (e.g., `ExecContext`, `QueryContext`, `RunInTransaction` with context). Use these to:
+
+- Pass a `context.Context` with deadline or cancellation.
+- Allow automatic cancellation if the context expires or is cancelled.
+
+#### How it works internally
+- go-pg obtains a connection from the pool.
+- Starts a goroutine that listens to `ctx.Done()`.
+- If context is done before query finishes, it sends a PostgreSQL cancel request using the connection's process ID and secret key.
+- The connection is then removed from the pool to prevent re-use of potentially broken connections.
+
+#### Example usage:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+// Always cancel context to avoid resource leaks.
+defer cancel()
+
+result, err := db.ExecContext(ctx, "UPDATE users SET active = ? WHERE id = ?", true, 1)
+if err != nil {
+    if errors.Is(err, context.DeadlineExceeded) {
+        log.Println("Query timed out")
+    } else {
+        log.Printf("Query failed: %v", err)
+    }
+}
+```
+
+### 2. Managing Query Timeouts via Configuration and Context
+
+- go-pg's `Options` struct allows setting `ReadTimeout` and `WriteTimeout` to limit per-operation time.
+- These settings affect how long it waits for reading/writing data from/to the database.
+- Context deadlines provide an application-level combined or custom timeout.
+
+#### Recommendations
+- Use context with timeouts/deadlines for overall query lifecycle management.
+- Use `ReadTimeout` and `WriteTimeout` to prevent low-level network hangs.
+
+### 3. Handling Common Errors and Connection States
+
+go-pg distinguishes between different error types to help decide when to retry or drop a connection. Key behaviors:
+
+- **Transient errors** (like timeouts, serialization failures, or too many connections) trigger automatic retries if enabled.
+- **Context cancellation errors** (`context.Canceled` and `context.DeadlineExceeded`) indicate client-side request termination, no retry.
+- **Bad connection errors** cause the connection to be removed from the pool to avoid reuse.
+- PostgreSQL errors are exposed as `pg.Error` types you can inspect for specifics like integrity violations or error codes.
+
+#### Example error handling in query execution:
+
+```go
+res, err := db.QueryContext(ctx, &users, "SELECT * FROM users WHERE active = ?", true)
+if err != nil {
+    var pgErr pg.Error
+    if errors.As(err, &pgErr) {
+        if pgErr.IntegrityViolation() {
+            log.Println("Integrity constraint violation detected")
+        }
+    } else if errors.Is(err, context.DeadlineExceeded) {
+        log.Println("Request timed out")
+    } else {
+        log.Printf("Unknown error: %v", err)
+    }
+    return err
+}
+```
+
+### 4. Using RunInTransaction with Context
+
+When running transactions, use `RunInTransaction(ctx, fn)` to:
+
+- Pass context to control the entire transaction lifecycle.
+- Automatically handle retries for transient errors.
+- Allow cancellation during transaction execution, triggering rollback.
+
+```go
+err := db.RunInTransaction(ctx, func(tx *pg.Tx) error {
+    if _, err := tx.ExecContext(ctx, "UPDATE accounts SET balance = balance - 10 WHERE id = ?", fromID); err != nil {
+        return err
+    }
+    if _, err := tx.ExecContext(ctx, "UPDATE accounts SET balance = balance + 10 WHERE id = ?", toID); err != nil {
+        return err
+    }
+    return nil
+})
+if err != nil {
+    log.Printf("Transaction failed: %v", err)
+}
+```
+
+### 5. Verifying Context Cancellation Behavior
+
+To confirm cancellation properly aborts queries and removes the connection:
+
+- Use a context with a short timeout.
+- Run a long-running query.
+- Verify the query terminates early with a `context.DeadlineExceeded` error.
+
+### 6. Debugging and Inspecting Pool State
+
+Use `PoolStats()` to monitor connection pool health and concurrency:
+
+```go
+stats := db.PoolStats()
+log.Printf("Pool stats: Hits=%d, Misses=%d, Timeouts=%d, TotalConns=%d, IdleConns=%d", stats.Hits, stats.Misses, stats.Timeouts, stats.TotalConns, stats.IdleConns)
+```
+
+Insights from stats help diagnose connection exhaustion or pool timeout issues.
+
+---
+
+## Practical Tips & Best Practices
+
+- Always pass a context to queries and transactions with explicit deadlines.
+- Handle errors explicitly checking for context cancellation and PostgreSQL errors.
+- Tune connection pool timeouts alongside context deadlines to avoid unexpected cancellations.
+- Avoid excessively short deadlines that might cause query starvation.
+- Use `RunInTransaction` to encapsulate transactional logic and benefit from built-in retry/cancellation handling.
+
+---
+
+## Troubleshooting Common Issues
+
+<AccordionGroup title="Common Timeouts and Cancellation Issues">
+<Accordion title="Query Hanging or Not Cancelling">
+Ensure your context is passed correctly to every query method (`ExecContext`, `QueryContext`, etc.).
+Check network connectivity and server responsiveness.
+Set sensible read/write timeouts on connection options.
+</Accordion>
+<Accordion title="Connection Pool Timeout Errors">
+Indicates all pool connections are in use or slow to release.
+Increase `PoolSize` or optimize query performance.
+Monitor pool stats with `PoolStats()`.
+</Accordion>
+<Accordion title="Unexpected Error When Query Is Cancelled">
+Queries canceled by context send PostgreSQL cancel requests.
+Pool removes affected connections to prevent reuse.
+Ensure your error handling is prepared to handle connection closed errors.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Examples
+
+### Context with Timeout Query Example
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+defer cancel()
+
+_, err := db.QueryContext(ctx, &users, "SELECT pg_sleep(5)")
+if err != nil {
+    if errors.Is(err, context.DeadlineExceeded) {
+        fmt.Println("Query timed out as expected")
+    } else {
+        fmt.Printf("Unexpected error: %v", err)
+    }
+}
+```
+
+### Error Type Assertion Example
+```go
+res, err := db.QueryOneContext(ctx, &user, "SELECT * FROM users WHERE id = ?", id)
+if err != nil {
+    var pgErr pg.Error
+    if errors.As(err, &pgErr) {
+        fmt.Printf("PostgreSQL error code: %s", pgErr.Field('C'))
+    } else {
+        fmt.Printf("Other error: %v", err)
+    }
+    return
+}
+```
+
+---
+
+## Next Steps & Related Content
+
+- Explore [Connection Pooling and Reliability](https://pg-docs/guides/performance-best-practices/connection-pooling) to ensure optimal resource use.
+- Review [Managing Transactions](https://pg-docs/guides/application-patterns/transactions) for advanced error handling within transactions.
+- Consult [Troubleshooting Common Setup Issues](https://pg-docs/getting-started/first-use/troubleshooting-common-setup-issues) for typical error diagnosis.
+- For fine-grained error handling, study the [Error Handling and Status Codes](https://pg-docs/api-reference/api-fundamentals-and-best-practices/error-handling-and-status-codes) documentation.
+
+---
+
+# Summary
+
+Effective timeout, cancellation, and error handling increases application robustness by freeing resources and preventing stuck or corrupted database states. go-pg integrates tightly with Go's context package, automatically sending PostgreSQL cancel requests on context cancellations or timeouts and removing bad connections from the pool. Users should always use context-aware query methods and handle errors appropriately, including recognizing PostgreSQL-specific integrity constraints or transaction abort states.
+
+#### Important Links & References
+
+- [Using Context for Query Execution](https://pkg.go.dev/context)
+- [go-pg Connection Pooling Guide](https://pg-docs/guides/performance-best-practices/connection-pooling)
+- [Managing Transactions in go-pg](https://pg-docs/guides/application-patterns/transactions)
+- [PostgreSQL Error Codes](https://www.postgresql.org/docs/current/errcodes-appendix.html)
+
+#### Recommended Next Steps
+
+- Adopt `Context` with deadlines on all database calls.
+- Monitor and tune connection pool parameters.
+- Implement retry logic for retryable PostgreSQL errors.
+- Explore advanced error handling and custom logging for production readiness.
+
+
+---
+
+This page ensures you use go-pg with modern Go idioms for cancellation and error management, empowering you to build resilient and efficient backend services.

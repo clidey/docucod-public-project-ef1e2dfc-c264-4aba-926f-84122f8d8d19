@@ -1,0 +1,308 @@
+---
+title: "What are the best ways to optimize ORM and query performance?"
+description: "Covers use of bulk operations, prepared statements, count estimates, and recommendations for efficient data retrieval and mutation. Outlines how to structure models and queries for high throughput."
+---
+
+# Optimizing ORM and Query Performance in go-pg
+
+Efficient data access is vital for building high-performance Go applications using go-pg. This guide dives into best practices and advanced techniques for optimizing ORM operations and SQL queries to maximize throughput, reduce latency, and maintain scalability. Whether your workload involves bulk data processing, complex relationships, or frequent query execution, these recommendations will help you achieve faster and more reliable performance.
+
+---
+
+## 1. Bulk Operations for High Throughput
+
+Bulk or batch queries minimize round-trips to the database, reducing latency and lock contention. Use bulk inserts, updates, and deletes whenever modifying multiple rows.
+
+- **Bulk Insert:** Use `db.Model(slice).Insert()` to insert multiple records in one query.
+
+  ```go
+  books := []Book{{Title: "Book A"}, {Title: "Book B"}}
+  _, err := db.Model(&books).Insert()
+  if err != nil {
+      panic(err)
+  }
+  ```
+
+- **Bulk Update:** Update multiple records by providing multiple structs or slices to the update method with selected columns.
+
+  ```go
+  books[0].Title = "Updated Book A"
+  books[1].Title = "Updated Book B"
+  _, err := db.Model(&books).Column("title").Update()
+  if err != nil {
+      panic(err)
+  }
+  ```
+
+- **Bulk Delete:** Delete multiple rows by passing a slice of structs or by filtering with `Where` and `Delete`.
+
+  ```go
+  // Delete by slice
+  _, err := db.Model(&books).Delete()
+  
+  // Delete with filter
+  ids := pg.In([]int{1, 2, 3})
+  _, err := db.Model((*Book)(nil)).Where("id IN (?)", ids).Delete()
+  ```
+
+### Benefits
+- Significantly reduces network and query overhead
+- Uses efficient PostgreSQL `VALUES` syntax and bulk commands
+- Ensures atomicity when running inside transactions
+
+### Best Practices
+- When bulk updating, explicitly specify the columns to update for clarity and performance.
+- For very large batches, consider splitting into smaller chunks to avoid query size limits.
+
+---
+
+## 2. Leveraging Prepared Statements
+
+Prepared statements allow the compilation of SQL once and execution multiple times with varying parameters.
+
+- Prepare a statement for repeated queries:
+
+  ```go
+  stmt, err := db.Prepare(`SELECT * FROM books WHERE author_id = $1`)
+  if err != nil {
+      panic(err)
+  }
+  defer stmt.Close()
+
+  var books []Book
+  _, err = stmt.Query(&books, 42)
+  if err != nil {
+      panic(err)
+  }
+  ```
+
+- Prepared statements reduce parsing and planning overhead on PostgreSQL side, speeding repeated queries.
+
+- They improve stability when using concurrent goroutines, reducing latency spikes.
+
+---
+
+## 3. Efficient Data Retrieval Techniques
+
+### Selecting Specific Columns
+
+Avoid `SELECT *` when you only need a subset of columns. Use `.Column()` or `.ColumnExpr()` to specify required fields.
+
+```go
+var book Book
+err := db.Model(&book).
+    Column("book.id", "book.title").
+    WherePK().
+    Select()
+if err != nil {
+    panic(err)
+}
+```
+
+### Using Query Builders for Conditions
+
+Use `.Where()`, `.WhereGroup()`, `.WhereIn()` for precise filtering, reducing returned data.
+
+```go
+var books []Book
+err := db.Model(&books).
+    Where("author_id = ?", 1).
+    WhereGroup(func(q *pg.Query) (*pg.Query, error) {
+        return q.WhereOr("title LIKE ?", "%Go%"), nil
+    }).
+    Select()
+```
+
+### Using Relation Preloading Carefully
+
+Preloading related data with `.Relation()` is powerful but may incur heavy joins or multiple queries. Load only necessary relations and consider custom filtering on relations.
+
+```go
+var stories []Story
+err := db.Model(&stories).
+    Relation("Author", func(q *pg.Query) (*pg.Query, error) {
+        return q.Column("author.id", "author.name"), nil
+    }).
+    Limit(10).
+    Select()
+```
+
+### Pagination and Counting
+
+For large datasets, use pagination with `.Limit()` and `.Offset()` or keyset pagination patterns. Use `CountEstimate()` to get estimated row counts for fast UI feedback.
+
+```go
+count, err := db.Model(&Book{}).CountEstimate(0)
+if err != nil {
+    panic(err)
+}
+fmt.Println("Estimated count:", count)
+
+// Load a page
+var page []Book
+err = db.Model(&page).Order("id ASC").Limit(50).Offset(100).Select()
+```
+
+Use keyset pagination with `.Where()` filters for best performance where possible.
+
+---
+
+## 4. Using Common Table Expressions (CTEs) and Upserts
+
+### CTEs for Complex Queries
+
+CTEs (`WITH`) can improve readability and performance in complex queries.
+
+```go
+cte := db.Model(&Book{}).Where("author_id = ?", 1)
+var result []Book
+err := db.Model(&result).
+    With("author_books", cte).
+    Table("author_books").
+    Select()
+```
+
+### Upsert via Insert On Conflict
+
+Use upsert to insert or update on conflict atomically:
+
+```go
+_, err := db.Model(&book).
+    OnConflict("(id) DO UPDATE").
+    Set("title = EXCLUDED.title").
+    Insert()
+```
+
+---
+
+## 5. Counting and Counting Estimates
+
+### Accurate Count
+Use `.Count()` on queries to get precise counts but avoid on large tables frequently as it's costly.
+
+### Estimate Count
+`CountEstimate()` leverages PostgreSQL's `EXPLAIN` to quickly approximate row counts for faster operations where exact count is not essential.
+
+```go
+estimate, err := db.Model(&Book{}).CountEstimate(0)
+```
+
+Use estimations for scientific pagination or progress indicators to reduce blocking.
+
+---
+
+## 6. Streaming Large Result Sets with ForEach
+
+Avoid loading large datasets entirely into memory. Use `.ForEach()` to process rows one by one to control memory footprint.
+
+```go
+err := db.Model((*Book)(nil)).OrderExpr("id ASC").ForEach(func(b *Book) error {
+    fmt.Println(b.Title)
+    return nil
+})
+```
+
+This pattern is especially useful for batch processing or data migration tools.
+
+---
+
+## 7. Model and Query Design Recommendations
+
+### Model Struct Best Practices
+- Define primary keys explicitly using `pg:",pk"` tags.
+- Use `pg:",notnull"` and `pg:",use_zero"` to control nullability precisely.
+- Take advantage of JSON, hstore, array tags for complex types.
+
+### Query Construction
+- Use the query builder API to build reusable and safe queries.
+- Apply `.Apply()` method for composable filters.
+
+```go
+filter := func(q *pg.Query) (*pg.Query, error) {
+    if authorID != 0 {
+        q = q.Where("author_id = ?", authorID)
+    }
+    return q, nil
+}
+
+var books []Book
+err := db.Model(&books).Apply(filter).Select()
+```
+
+---
+
+## 8. Common Pitfalls and How to Avoid Them
+
+- **Overloading queries with unnecessary relations or columns** leads to slow queries and memory bloat.
+- **Not using prepared statements or bulk operations in high-load scenarios** causes latency spikes.
+- **Relying heavily on OFFSET in pagination** which can be inefficient for large offsets — prefer keyset pagination.
+- **Improper tagging of nullable fields** can cause unexpected NULLs or failures.
+
+---
+
+## 9. Troubleshooting Performance Issues
+
+- Use PostgreSQL logs and tools like `EXPLAIN ANALYZE` to identify slow queries.
+- Benchmark query variants using Go benchmark tests (`testing.B`) to compare ORM vs raw SQL performance.
+- Monitor connection pool size (`PoolSize`) and timeouts to prevent bottlenecks.
+- Profile application memory and CPU usage to detect scanning bottlenecks.
+
+---
+
+## 10. Example: Bulk Insert, Update, and Count Estimate
+
+```go
+// Bulk insert
+books := []Book{{Title: "Golang"}, {Title: "PostgreSQL"}}
+_, err := db.Model(&books).Insert()
+panicIf(err)
+
+// Bulk update
+books[0].Title = "Golang Updated"
+books[1].Title = "PostgreSQL Updated"
+_, err = db.Model(&books).Column("title").Update()
+panicIf(err)
+
+// Estimated row count
+count, err := db.Model(&Book{}).CountEstimate(0)
+panicIf(err)
+fmt.Printf("Estimated books: %d\n", count)
+```
+
+---
+
+## 11. Additional Resources and Learning Paths
+
+- [Defining Models and Basic CRUD](https://pg.uptrace.dev/guides/getting-started/define-models-crud)
+- [Advanced Queries and Model Relationships](https://pg.uptrace.dev/guides/working-with-data/advanced-queries-relations)
+- [Count Estimate and Pagination](https://pg.uptrace.dev/guides/performance-best-practices/count-estimate-pagination)
+- [Bulk Operations and Batch Processing](https://pg.uptrace.dev/guides/performance-best-practices/optimizing-queries-batch)
+- [Connection Pooling and Reliability](https://pg.uptrace.dev/guides/performance-best-practices/connection-pooling)
+
+Use these resources to deepen your practical skills and optimize your go-pg applications further.
+
+---
+
+## 12. Summary
+
+Optimizing ORM and query performance in go-pg involves:
+
+- Bulk processing operations to reduce database round-trips
+- Prepared statements to speed up repeated queries
+- Selecting only necessary data and using efficient filters
+- Leveraging PostgreSQL features like CTEs and upserts
+- Using count estimates for scalable pagination
+- Streaming large result sets with `ForEach` to control memory
+- Designing models and tags carefully for precise and optimized mapping
+- Proactive troubleshooting using benchmarks and EXPLAIN
+
+Implementing these strategies ensures your application achieves high throughput, low latency, and robust scalability.
+
+---
+
+<Tip>
+For scenarios with ultra-high volume and complex transactions, consider complementing go-pg with the Bun ORM, which supports multiple databases and offers extensive performance optimizations.
+</Tip>
+
+
+---
