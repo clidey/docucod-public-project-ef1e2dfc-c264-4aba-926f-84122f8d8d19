@@ -1,0 +1,220 @@
+---
+title: "Connecting to PostgreSQL"
+description: "Walk through establishing a connection to a PostgreSQL database using robust connection options. Includes example connection parameters, best practices for managing credentials, and verification of the live connection."
+---
+
+# Connecting to PostgreSQL with go-pg
+
+Establishing a reliable connection to your PostgreSQL database is the first crucial step in using go-pg effectively. This guide walks you through configuring connection options, managing your credentials securely, and verifying your connection to ensure your application interacts smoothly with your database.
+
+---
+
+## 1. Understanding Connection Options
+
+Before connecting, familiarize yourself with the essential connection parameters that define how go-pg connects to your PostgreSQL database. These options shape network behavior, authentication, and performance tuning.
+
+- **Network**: The network type for connecting to PostgreSQL. Defaults to `tcp`. Can also be set to `unix` for socket connections.
+- **Addr**: The address of the PostgreSQL server, such as `localhost:5432`. Defaults vary based on the network.
+- **User**: Database user account. Default is `postgres` or read from `PGUSER` environment variable.
+- **Password**: Password associated with the database user. Defaults to `postgres` or read from `PGPASSWORD`.
+- **Database**: The name of the target database. Default is `postgres` or read from `PGDATABASE`.
+- **TLSConfig**: Optional TLS configuration for secure connections.
+- **ApplicationName**: Identifies your application in PostgreSQL logs.
+- **Timeouts**: Includes DialTimeout, ReadTimeout, WriteTimeout, and PoolTimeout controls.
+- **PoolSize and MinIdleConns**: Control connection pooling behavior.
+
+These options can be set directly or parsed from a connection string URL.
+
+<Tip>
+Use environment variables such as `PGUSER`, `PGPASSWORD`, and `PGDATABASE` to avoid hardcoding sensitive credentials in your code.
+</Tip>
+
+
+## 2. Creating Connection Options
+
+You can manually create an `Options` struct or parse a PostgreSQL connection URL.
+
+### Example: Manually Configure Options
+```go
+import "github.com/go-pg/pg/v10"
+
+opts := &pg.Options{
+    Addr: "localhost:5432",
+    User: "myuser",
+    Password: "mypassword",
+    Database: "mydb",
+    ApplicationName: "myapp",
+}
+```
+
+### Example: Parse URL
+```go
+opts, err := pg.ParseURL("postgres://user:password@localhost:5432/mydb?sslmode=disable&application_name=myapp")
+if err != nil {
+    // handle error
+}
+```
+
+The `ParseURL` method automatically applies default values and validates the scheme.
+
+<Note>
+Supported sslmode values and their effect on security:
+- `disable`: TLS disabled
+- `allow`, `prefer`, `require`: TLS with insecure verification
+- `verify-ca`, `verify-full`: TLS with verification
+</Note>
+
+## 3. Establishing the Connection
+
+Once options are ready, create a `DB` instance to connect.
+
+```go
+db := pg.Connect(opts)
+```
+
+By default, `Connect` establishes connection lazily on the first query or ping. To verify connection immediately, use:
+
+```go
+ctx := context.Background()
+err := db.Ping(ctx)
+if err != nil {
+    // handle connection error
+}
+```
+
+This ping runs a simple `SELECT 1` query to confirm the database is reachable.
+
+## 4. Managing Credentials Securely
+
+- Avoid embedding passwords directly in source code or repository.
+- Use environment variables and `pg.Options` defaults to read from a safe, external location.
+- For production environments, consider integrating with secure vaults or Kubernetes secrets.
+
+<Tip>
+Use go-pg's `OnConnect` callback option for initializing session-level settings on each new connection, such as setting roles or schemas.
+</Tip>
+
+## 5. Connection Pooling & Configuration
+
+go-pg manages connection pooling transparently:
+
+- **PoolSize** controls the maximum connections concurrently open to PostgreSQL.
+- **MinIdleConns** keeps a minimum number of idle connections ready to reduce latency.
+- **IdleTimeout** and **IdleCheckFrequency** help clean stale connections automatically.
+
+Example:
+
+```go
+opts.PoolSize = 20
+opts.MinIdleConns = 5
+opts.IdleTimeout = 10 * time.Minute
+opts.IdleCheckFrequency = 5 * time.Minute
+```
+
+The pool ensures efficient reuse and lifecycle management of connections.
+
+## 6. Full Example: Connect and Verify
+
+Below is a complete minimal example demonstrating a secure connection with validation.
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/go-pg/pg/v10"
+    "log"
+)
+
+func main() {
+    opts := &pg.Options{
+        Addr:     "localhost:5432",
+        User:     "myuser",
+        Password: "mypassword",
+        Database: "mydb",
+        ApplicationName: "myapp",
+
+        PoolSize: 10,
+        MinIdleConns: 2,
+    }
+
+    db := pg.Connect(opts)
+    defer func() {
+        err := db.Close()
+        if err != nil {
+            log.Printf("error closing connection: %v", err)
+        }
+    }()
+
+    ctx := context.Background()
+    if err := db.Ping(ctx); err != nil {
+        log.Fatalf("could not connect to database: %v", err)
+    }
+
+    fmt.Println("Successfully connected to PostgreSQL database!")
+}
+```
+
+## 7. Troubleshooting Common Connection Issues
+
+<AccordionGroup title="Common Connection Problems">
+<Accordion title="Authentication failed">
+- Verify user and password correctness.
+- Confirm PostgreSQL `pg_hba.conf` allows connections from your client.
+- Ensure no trailing spaces or hidden characters in credentials.
+</Accordion>
+<Accordion title="Timeouts or network unreachable">
+- Check database address and port.
+- Ensure PostgreSQL server is running and accessible.
+- Verify firewall and network settings allow traffic.
+</Accordion>
+<Accordion title="SSL errors">
+- Validate SSL configuration matches server expectations.
+- Use `sslmode` option appropriately.
+- Check certificates if using verify modes.
+</Accordion>
+</AccordionGroup>
+
+## 8. Best Practices and Tips
+
+- Use `pg.ParseURL` for cleaner and centralized connection string management.
+- Keep passwords and sensitive info outside source code.
+- Employ `OnConnect` hook for initializing connection-specific context such as timezone or search path.
+- Adjust pool settings based on application concurrency and PostgreSQL server limits.
+- Use `Ping` after connecting in applications that require immediate verification.
+
+## 9. Next Steps
+
+- Explore [Defining Your First Model](/getting-started/basic-usage/first-model) to start mapping Go structs to tables.
+- Learn about [Creating Tables & Basic CRUD](/getting-started/basic-usage/schema-and-crud) for data manipulation workflows.
+- Check [Resolving Installation and Import Errors](/getting-started/troubleshooting/installation-errors) and [Solving Connection Problems](/getting-started/troubleshooting/connection-errors) if you encounter issues.
+
+---
+
+For a broad understanding of connection pooling internals and advanced configuration, consult the [Architecture Overview](/overview/architecture-and-core-concepts/architecture-overview) and [Connection Pooling and Lifecycle](/concepts/core-architecture/connection-pooling-and-lifecycle) pages.
+
+
+---
+
+### Summary of Key Commands and Configuration
+
+```go
+opts := &pg.Options{
+    Addr: "host:5432",
+    User: "username",
+    Password: "password",
+    Database: "dbname",
+    ApplicationName: "myapp",
+    PoolSize: 20,
+    MinIdleConns: 5,
+}
+
+db := pg.Connect(opts)
+err := db.Ping(context.Background())
+if err != nil {
+    // handle connection failure
+}
+```
+
+---
