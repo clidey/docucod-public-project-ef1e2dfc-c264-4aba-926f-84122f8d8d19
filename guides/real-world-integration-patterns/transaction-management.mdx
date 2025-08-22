@@ -1,0 +1,321 @@
+---
+title: "Managing Transactions and Prepared Statements"
+description: "Master transaction lifecycles and prepared statement use in go-pg, with concrete examples for error handling, rollback, and leveraging prepared statements for performance and safety."
+---
+
+# Managing Transactions and Prepared Statements
+
+Master the lifecycle of transactions and the usage of prepared statements in go-pg with practical, example-driven guidance. This page equips you to confidently start, control, rollback, and commit transactions, handle errors gracefully, and leverage prepared statements to optimize performance and ensure query safety.
+
+---
+
+## Table of Contents
+1. [Introduction to Transactions and Prepared Statements](#introduction-to-transactions-and-prepared-statements)
+2. [Managing Transactions in go-pg](#managing-transactions-in-go-pg)
+   - [Starting a Transaction](#starting-a-transaction)
+   - [Running Functions Within Transactions](#running-functions-within-transactions)
+   - [Manual Commit and Rollback](#manual-commit-and-rollback)
+   - [Error Handling and Rollbacks](#error-handling-and-rollbacks)
+3. [Using Prepared Statements](#using-prepared-statements)
+4. [Best Practices and Tips](#best-practices-and-tips)
+5. [Troubleshooting Common Issues](#troubleshooting-common-issues)
+6. [Next Steps and Related Guides](#next-steps-and-related-guides)
+
+---
+
+## Introduction to Transactions and Prepared Statements
+
+Transactions ensure that a group of database operations execute as an atomic unit, preserving data integrity and consistency. Prepared statements compile SQL queries once, allowing repeated, efficient, and safe execution with varying parameters. Together, they empower you to write performant, reliable database code in go-pg.
+
+This page will guide you through starting transactions, running operations safely within them, handling errors, and leveraging prepared statements for speed and SQL injection protection.
+
+---
+
+## Managing Transactions in go-pg
+
+Transactions in go-pg are controlled through the `*pg.Tx` type, which implements transactional behavior with concurrency safety and automatic cleanup.
+
+### Starting a Transaction
+
+Begin a transaction using `DB.Begin()` or `DB.BeginContext()`:
+
+```go
+func ExampleDB_Begin() {
+    db := pg.Connect(&pg.Options{User: "postgres", Password: "postgres"})
+    defer db.Close()
+
+    tx, err := db.Begin()
+    if err != nil {
+        panic(err)
+    }
+    defer tx.Rollback() // ensures rollback if not committed
+
+    // Execute your transactional queries here...
+
+    // Commit the transaction
+    if err := tx.Commit(); err != nil {
+        panic(err)
+    }
+}
+```
+
+**Expected result:** A `*pg.Tx` is returned, allowing you to execute queries within the transaction context.
+
+
+### Running Functions Within Transactions
+
+For safer, simpler transaction management, use `DB.RunInTransaction(ctx, func(tx *pg.Tx) error { ... })`. The function automatically commits if no error is returned, or rolls back if an error occurs.
+
+```go
+func ExampleDB_RunInTransaction() {
+    db := pg.Connect(&pg.Options{User: "postgres", Password: "postgres"})
+    defer db.Close()
+
+    err := db.RunInTransaction(context.Background(), func(tx *pg.Tx) error {
+        var counter int
+        // Lock the counter row
+        _, err := tx.QueryOne(pg.Scan(&counter), `SELECT counter FROM tx_test FOR UPDATE`)
+        if err != nil {
+            return err
+        }
+
+        counter++
+
+        _, err = tx.Exec(`UPDATE tx_test SET counter = ?`, counter)
+        return err
+    })
+
+    if err != nil {
+        panic(err)
+    }
+}
+```
+
+**Success criteria:** The transaction commits automatically if the inner function returns `nil`, otherwise it rolls back.
+
+### Manual Commit and Rollback
+
+Within a transaction, you can manually commit or rollback using:
+
+- `Commit()` or `CommitContext(ctx)`
+- `Rollback()` or `RollbackContext(ctx)`
+
+Always defer a rollback after `Begin()` to ensure the transaction closes if an error happens or commit is forgotten.
+
+Example:
+
+```go
+tx, err := db.Begin()
+if err != nil {
+    panic(err)
+}
+defer tx.Rollback() // safe cleanup
+
+// perform queries...
+if err := tx.Commit(); err != nil {
+    panic(err)
+}
+```
+
+### Error Handling and Rollbacks
+
+If any query within a transaction fails, you should roll back immediately to avoid leaving partial changes.
+
+`RunInTransaction` provides a robust pattern:
+
+- Automatically rolls back on returned errors or panics
+- Commits only if no errors
+
+Example error handling pattern:
+
+```go
+if err := db.RunInTransaction(ctx, func(tx *pg.Tx) error {
+    if _, err := tx.Exec(`invalid SQL`); err != nil {
+        return err // triggers rollback
+    }
+    return nil
+}); err != nil {
+    fmt.Println("Transaction failed:", err)
+}
+```
+
+**Outcome:** The transaction is rolled back if any step fails, ensuring data consistency.
+
+---
+
+## Using Prepared Statements
+
+Prepared statements optimize repeated query execution and guard against SQL injection by precompiling statements server-side.
+
+### Preparing Statements
+
+Create a prepared statement with `DB.Prepare(query)`. Use the returned `*Stmt` to query or execute repeatedly.
+
+```go
+func ExampleDB_Prepare() {
+    stmt, err := db.Prepare(`SELECT $1::text, $2::text`)
+    if err != nil {
+        panic(err)
+    }
+    defer stmt.Close()
+
+    var s1, s2 string
+    _, err = stmt.QueryOne(pg.Scan(&s1, &s2), "foo", "bar")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(s1, s2)
+    // Output: foo bar
+}
+```
+
+**Note:** Always close a prepared statement with `stmt.Close()` when done to release resources.
+
+### Using Prepared Statements Inside Transactions
+
+Within a transaction, prepare statements via `Tx.Prepare(query)` to bind them to the transaction lifecycle.
+
+```go
+func preparedTxExample(db *pg.DB) error {
+    tx, err := db.Begin()
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    stmt, err := tx.Prepare(`SELECT $1::text`)
+    if err != nil {
+        return err
+    }
+    defer stmt.Close()
+
+    var val string
+    _, err = stmt.QueryOne(pg.Scan(&val), "test")
+    if err != nil {
+        return err
+    }
+
+    return tx.Commit()
+}
+```
+
+**Benefit:** Statements are prepared within the transaction scope and automatically closed on commit or rollback.
+
+---
+
+## Best Practices and Tips
+
+- **Always defer Rollback when beginning a transaction:** This guarantees cleanup in case of early returns or panics.
+- **Use `RunInTransaction` for most cases:** It simplifies error handling by automating commit/rollback.
+- **Close prepared statements promptly:** To avoid resource leaks.
+- **Avoid sharing a `*Stmt` across transactions:** Prepare new statements per transaction scope.
+- **Use `FOR UPDATE` locks for concurrency control:** When incrementing counters or modifying rows in transactions.
+- **Handle `ErrTxDone`:** Operations on closed transactions return `ErrTxDone`; catch and handle accordingly.
+- **Investigate errors during commit/rollback:** Especially in production, failures during these steps can cause inconsistent states.
+
+---
+
+## Troubleshooting Common Issues
+
+### Transaction Already Committed or Rolled Back
+
+```go
+err := tx.ExecContext(ctx, "INSERT INTO ...")
+if err != nil {
+    // If transaction is already closed:
+    if err == pg.ErrTxDone {
+        // Handle or report error
+    }
+}
+```
+
+**Cause:** Attempting queries after commit or rollback.
+
+### Duplicate Key or Integrity Violation
+
+```go
+_, err := db.Model(video).Insert()
+if err != nil {
+    if pgErr, ok := err.(pg.Error); ok && pgErr.IntegrityViolation() {
+        fmt.Println("video already exists")
+    } else {
+        panic(err)
+    }
+}
+```
+
+**Advice:** Use error type checks to handle constraint violations gracefully.
+
+### Prepared Statement Errors
+
+- Trying to use a closed statement returns `pg: statement is closed`.
+- Ensure to close statements only once.
+
+### Connection Pool Exhaustion in Concurrent Transactions
+
+- Review connection pool size settings.
+- Optimize transactions to be as short as possible.
+
+---
+
+## Next Steps and Related Guides
+
+- Explore [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling) for optimizing concurrent transaction performance.
+- Learn about [Working with Notifications and Bulk Copy](/guides/real-world-integration-patterns/notifications-copy) for advanced data workflows.
+- Review [Performing Basic Queries (CRUD)](/guides/getting-started/basic-crud-workflows) to complement transaction and statement usage.
+- Check API Reference for [Transactions and Prepared Statements](/api-reference/core-orm-database/transactions-prepared) for full method details.
+
+---
+
+## Summary
+
+Transactions and prepared statements are foundational tools to build consistent, performant PostgreSQL applications using go-pg. This guide has shown how to start and manage transactions safely, automate commit and rollback with error handling, and effectively use prepared statements to optimize repeated queries. Mastery of these techniques ensures robust database interactions and smoother development workflows.
+
+---
+
+## Full Example: Increment a Counter Safely in a Transaction
+
+```go
+func incrementCounter(db *pg.DB) error {
+    return db.RunInTransaction(context.Background(), func(tx *pg.Tx) error {
+        var counter int
+        _, err := tx.QueryOne(pg.Scan(&counter), `SELECT counter FROM tx_test FOR UPDATE`)
+        if err != nil {
+            return err
+        }
+
+        counter++
+
+        _, err = tx.Exec(`UPDATE tx_test SET counter = ?`, counter)
+        return err
+    })
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    err := incrementCounter(db)
+    if err != nil {
+        panic(err)
+    }
+
+    var finalCounter int
+    _, err = db.QueryOne(pg.Scan(&finalCounter), `SELECT counter FROM tx_test`)
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println("Counter value after increment:", finalCounter)
+}
+```
+
+---
+
+## Related Documentation
+- [Basic CRUD Workflows](/guides/getting-started/basic-crud-workflows)
+- [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling)
+- [API Reference: Transactions and Prepared Statements](/api-reference/core-orm-database/transactions-prepared)
+- [Error Handling & Status Codes](/api-reference/common-operations-examples/error-handling-status-codes)
+
+---

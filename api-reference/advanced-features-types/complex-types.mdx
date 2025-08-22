@@ -1,0 +1,264 @@
+---
+title: "Arrays, Hstore, Composite, and JSONB"
+description: "Guide on working with advanced data structures. Learn how to serialize/deserialize arrays, use PostgreSQL's hstore, define and use composite types, and handle JSONB payloads—all natively from Go."
+---
+
+# Arrays, Hstore, Composite, and JSONB
+
+Harness the power of PostgreSQL's advanced data structures directly in Go using go-pg. This guide walks you through serializing and deserializing arrays, employing PostgreSQL's hstore key-value format, defining and using composite types, and handling JSONB payloads. All interactions occur natively within Go, making your data modeling expressive, efficient, and seamless.
+
+---
+
+## Working with PostgreSQL Arrays
+
+Go-pg offers full support for PostgreSQL arrays, enabling you to store and retrieve slices and arrays from Go with native serialization.
+
+### Automatic Array Mapping
+
+Go slices with supported element types (such as `[]string`, `[]int`, `[]int64`, `[]float64`) map directly to PostgreSQL array columns.
+
+- Use Go slices in your structs, and go-pg will handle marshaling/unmarshaling automatically.
+- Zero-value slices (`nil` or empty) are marshaled as `NULL` in SQL unless customized.
+
+### Array Example
+```go
+type User struct {
+    ID     int64
+    Emails []string // stored as PostgreSQL text[]
+}
+
+user := &User{
+    Emails: []string{"user@example.com", "user2@example.com"},
+}
+_, err := db.Model(user).Insert()
+if err != nil {
+    panic(err)
+}
+
+// Querying back
+var users []User
+err = db.Model(&users).Select()
+if err != nil {
+    panic(err)
+}
+```
+
+### Customizing Array Behavior
+To work with complex array types or enable nested arrays:
+- Use the `array` struct tag (e.g., `pg:",array"`) when defining model fields.
+- Under the hood, go-pg uses dedicated `ArrayAppender` and `ArrayScanner` functions to translate Go slices to PostgreSQL arrays and vice versa.
+
+<Tip>
+Arrays are marshaled as PostgreSQL arrays with proper quoting. Nil slices become SQL `NULL` unless overridden by `pg:",use_zero"` to send empty arrays.
+</Tip>
+
+---
+
+## Using PostgreSQL Hstore
+
+Hstore is a key-value store data type in PostgreSQL suited for storing maps.
+
+### Go-pg Hstore Support
+
+- Map types like `map[string]string` naturally bind to hstore columns.
+- Use `pg:"hstore"` struct tag on fields to specify hstore type explicitly.
+- go-pg handles serialization and deserialization automatically.
+
+### Hstore Example
+```go
+type Product struct {
+    ID       int64
+    AttrsMap map[string]string `pg:"hstore"`
+}
+
+p := &Product{
+    AttrsMap: map[string]string{
+        "color": "red",
+        "size": "large",
+    },
+}
+
+_, err := db.Model(p).Insert()
+if err != nil {
+    panic(err)
+}
+
+// Querying back
+var products []Product
+err = db.Model(&products).Select()
+if err != nil {
+    panic(err)
+}
+```
+
+<Tip>
+Hstore is ideal for small dynamic key-value data. Be aware that all keys and values are strings.
+</Tip>
+
+---
+
+## Composite Types
+
+PostgreSQL supports composite types for grouping multiple columns into a single column-like structure.
+
+### Go Support for Composite Types
+
+- Define Go structs corresponding to PostgreSQL composite types.
+- Embed composite structs inside your main models.
+- go-pg offers built-in `compositeAppender` and `compositeScanner` to serialize and deserialize these types.
+
+### Defining and Using Composite Types
+```go
+// PostgreSQL composite type example:
+// CREATE TYPE address AS (
+//   street TEXT,
+//   city TEXT,
+//   zip_code TEXT
+// );
+
+// Go struct matching the composite type
+
+// Use pointers for nullable fields if needed
+
+ type Address struct {
+    Street  string
+    City    string
+    ZipCode string
+}
+
+type Customer struct {
+    ID      int64
+    Name    string
+    Address Address `pg:",type:address"`
+}
+
+c := &Customer{
+    Name: "Alice",
+    Address: Address{
+        Street:  "123 Main St",
+        City:    "Hometown",
+        ZipCode: "12345",
+    },
+}
+_, err := db.Model(c).Insert()
+if err != nil {
+    panic(err)
+}
+
+// Querying back
+var customers []Customer
+err = db.Model(&customers).Select()
+if err != nil {
+    panic(err)
+}
+```
+
+<Tip>
+The explicit `pg:",type:address"` tag tells go-pg to treat the struct as the PostgreSQL composite type named `address`.
+</Tip>
+
+---
+
+## JSONB Handling
+
+JSONB is flexible for semi-structured data and is a core PostgreSQL type.
+
+### Native JSONB Support
+
+- Go structs, maps, slices, and any json.Marshal/json.Unmarshal compatible types can be used directly.
+- go-pg serializes these types as JSONB automatically.
+
+### Example: Storing and Querying JSONB
+```go
+type Event struct {
+    ID       int64
+    Payload  map[string]interface{} // stored as JSONB
+}
+
+// Insert an event
+err := db.Model(&Event{
+    Payload: map[string]interface{}{
+        "action": "login",
+        "user":   "alice",
+    },
+}).Insert()
+if err != nil {
+    panic(err)
+}
+
+// Select events
+var events []Event
+err = db.Model(&events).Select()
+if err != nil {
+    panic(err)
+}
+```
+
+### Handling JSON Raw Message
+For advanced scenarios where you want to defer unmarshaling or pass raw JSON:
+- Use `json.RawMessage` type in struct fields.
+- go-pg supports scanning into and appending from this type.
+
+---
+
+## Practical Tips and Best Practices
+
+- **Use zero values carefully:** By default, go-pg treats zero values as SQL `NULL`. Use `pg:",use_zero"` struct tag to override.
+- **Composite Type Definition:** Ensure PostgreSQL composite types exist and map correctly to your Go structs.
+- **Array Tag:** Always specify the `array` tag for multidimensional arrays or when auto-detection fails.
+- **Null Values:** Understand how `nil` slices and maps convert to SQL `NULL` and verify your database schema accordingly.
+
+---
+
+## Troubleshooting Common Issues
+
+<AccordionGroup title="Common Pitfalls with Arrays, Hstore, Composite, and JSONB">
+<Accordion title="Arrays not inserting properly">
+Ensure:
+- The Go slice element type and PostgreSQL array element type match precisely.
+- The `array` tag is present if working with complex array structures.
+- The slice is properly initialized; uninitialized (`nil`) slices become `NULL`.
+</Accordion>
+
+<Accordion title="Hstore serialization errors">
+Make sure the Go field has the `pg:"hstore"` tag and is of type `map[string]string`.
+Incorrect map types (e.g., `map[string]interface{}`) are not supported for hstore.
+</Accordion>
+
+<Accordion title="Composite type scanning errors">
+- PostgreSQL composite type must exist before usage.
+- The Go struct fields must be in the exact order and count as PostgreSQL composite fields.
+- Use explicit `pg:",type:yourcomposite"` tag for composite fields.
+</Accordion>
+
+<Accordion title="JSONB unmarshaling problems">
+- Ensure that the Go type implements `json.Unmarshaler` or is compatible with JSON.
+- For raw JSON, use `json.RawMessage`.
+- Confirm that the column is `jsonb` type in PostgreSQL.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Summary
+This page empowered you to:
+
+- Define native Go models and map them seamlessly to PostgreSQL arrays.
+- Work with PostgreSQL hstore fields as Go maps.
+- Model composite types as embedded Go structs with PostgreSQL type annotations.
+- Handle JSONB columns flexibly via native Go structs and raw JSON.
+
+Mastering these advanced types allows building richer, more efficient data models, reducing boilerplate and improving integration quality.
+
+---
+
+## Additional Resources
+
+- [Example: Arrays Integration in go-pg](https://pkg.go.dev/github.com/go-pg/pg/v10?tab=doc#example-DB-Model-PostgresArrayStructTag)
+- [Example: Hstore Usage](https://pkg.go.dev/github.com/go-pg/pg/v10?tab=doc#example-DB-Model-HstoreStructTag)
+- [Composite Types Example](https://pkg.go.dev/github.com/go-pg/pg/v10?tab=doc#example-DB-Model-CompositeType)
+- [JSONB Handling Examples](https://pkg.go.dev/github.com/go-pg/pg/v10?tab=doc#example-DB-Model)
+- Related guide: [Modeling Data Structs](/guides/getting-started/modeling-data-structs)
+- See also: [Transactions and Prepared Statements](/guides/real-world-integration-patterns/transaction-management)
+
+<Source url="https://github.com/go-pg/pg" branch="main" paths='[{"path": "orm/composite.go", "range": "1-52"},{"path": "types/array_scan.go", "range": "1-164"},{"path": "types/array_append.go", "range": "1-154"}]' />

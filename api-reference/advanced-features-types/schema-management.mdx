@@ -1,0 +1,252 @@
+---
+title: "Schema and Table Management"
+description: "Instructions for creating, updating, and dropping tables directly from Go structs. Includes helpers for schema evolution, automatic migrations, and customizing table options."
+---
+
+# Schema and Table Management
+
+Manage your PostgreSQL database schema directly through Go structs using go-pg's ORM features. This page guides you through creating, updating, and dropping tables based on your Go struct definitions, streamlining schema evolution with helpful tools for migrations and customizations.
+
+---
+
+## Overview
+
+go-pg provides a seamless way to map Go structs to PostgreSQL tables and manage the lifecycle of those tables — from creation to alteration and removal — without writing raw SQL migrations manually. Manage schema changes safely and flexibly, letting your Go code define the shape of your tables, constraints, and indexes.
+
+This documentation focuses exclusively on schema and table management features, detailing how to:
+
+- Create tables from Go structs
+- Drop tables
+- Customize table creation options
+- Evolve schema with migrations helpers
+
+
+## Creating Tables from Structs
+
+Creating tables is as simple as defining your Go model structs and invoking the `CreateTable` method on the ORM model.
+
+### Basic Table Creation
+
+```go
+// Define your model
+type User struct {
+    Id   int64
+    Name string
+}
+
+func createSchema(db *pg.DB) error {
+    return db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{})
+}
+```
+
+This command creates a table based on the struct fields, generating columns with corresponding PostgreSQL types.
+
+### Table Creation Options
+
+When creating tables, you can fine-tune the process using options:
+
+- `Temp`: Create a temporary table
+- `IfNotExists`: Skip creation if the table already exists
+- `FKConstraints`: Enable foreign key constraints creation
+- `Migrate`: Automatically add missing columns
+- `NoInherit`: Disable inheritance (PostgreSQL-specific)
+
+Example:
+
+```go
+err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{
+    IfNotExists:   true,
+    FKConstraints: true,
+})
+if err != nil {
+    panic(err)
+}
+```
+
+
+### Automatic Migrations
+
+The `Migrate` option can be used to add missing columns to an existing table without dropping or recreating it, easing schema evolution.
+
+```go
+err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{
+    Migrate: true,
+})
+```
+
+This is especially useful in development or during incremental upgrades but should be used carefully in production.
+
+
+## Dropping Tables
+
+Remove tables linked with your models using the `DropTable` method.
+
+### Basic Usage
+
+```go
+err := db.Model((*User)(nil)).DropTable(&orm.DropTableOptions{
+    IfExists: true,  // drop only if table exists
+    Cascade:  true,  // drop dependent objects
+})
+if err != nil {
+    panic(err)
+}
+```
+
+Dropping tables with `Cascade` ensures related constraints or dependent objects are removed as well.
+
+
+## Customizing Table Options
+
+### Custom Table Names
+
+By default, go-pg derives table names from the struct name in plural snake_case form. To override, use struct tags or dynamically specify table names via the ORM API.
+
+```go
+type Person struct {
+    tableName struct{} `pg:"people"`
+    Id        int
+    Name      string
+}
+
+// Or dynamically
+err := db.Model(&Person{}).Table("custom_people").CreateTable(nil)
+```
+
+### Column Type Overrides and Constraints
+
+Use struct tags to control column behavior including types, constraints, defaults, and nullability.
+
+```go
+type Event struct {
+    ID        int64
+    Name      string    `pg:",notnull"`           // NOT NULL
+    Data      JSONBType `pg:"type:jsonb"`          // custom type
+    CreatedAt time.Time `pg:"default:now()"`       // default value
+}
+```
+
+### Handling Advanced Column Types
+
+PostgreSQL supports many advanced column types such as arrays, jsonb, hstore, and composite types, which you can leverage via specific `pg` struct tags and Go type mappings.
+
+Refer to the [Supported Data Types & Type Mapping](/api-reference/advanced-features-types/type-mapping) guide for full details.
+
+
+## Schema Evolution and Helpers
+
+While core schema changes are handled by `CreateTable` and `DropTable`, evolving schema with migrations requires careful planning. For automated and incremental schema updates, consider:
+
+- Using `CreateTable` with `Migrate: true`
+- Hand-crafting migrations for complex schema changes
+- Combining schema management with transaction control (see the Transactions guide)
+
+
+## Practical Examples
+
+### Creating and Dropping Tables
+
+```go
+package main
+
+import (
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/orm"
+    "log"
+)
+
+type Product struct {
+    Id    int64
+    Name  string
+    Price float64
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User:     "postgres",
+        Password: "postgres",
+        Database: "shop"
+    })
+    defer db.Close()
+
+    // Create the products table
+    err := db.Model((*Product)(nil)).CreateTable(&orm.CreateTableOptions{
+        IfNotExists: true,
+    })
+    if err != nil {
+        log.Fatalf("Failed to create table: %v", err)
+    }
+
+    // Drop the products table
+    err = db.Model((*Product)(nil)).DropTable(&orm.DropTableOptions{
+        IfExists: true,
+        Cascade:  true,
+    })
+    if err != nil {
+        log.Fatalf("Failed to drop table: %v", err)
+    }
+}
+```
+
+
+### Custom Table Name and JSONB Column
+
+```go
+type LogEntry struct {
+    tableName struct{} `pg:"logs"`
+    Id        int64
+    Info      map[string]interface{} `pg:",type:jsonb"`
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User: "postgres",
+    })
+    defer db.Close()
+
+    err := db.Model((*LogEntry)(nil)).CreateTable(&orm.CreateTableOptions{
+        IfNotExists: true,
+    })
+    if err != nil {
+        panic(err)
+    }
+}
+```
+
+
+## Best Practices and Tips
+
+- Always use `IfNotExists` and `IfExists` options during table creation and dropping to avoid unnecessary failures.
+- Use temporary tables (`Temp: true`) for integration tests or intermediate data processing.
+- Be cautious with automatic migration (`Migrate: true`) in production; validate changes to avoid data loss.
+- Employ schema version control tools in combination with go-pg for comprehensive migration management.
+- Regularly inspect the generated schema by querying PostgreSQL metadata tables.
+
+
+## Troubleshooting
+
+### Common Issues
+
+- **Table already exists error:** Use `IfNotExists: true` to prevent failures.
+- **Missing foreign keys or constraints:** Ensure `FKConstraints: true` is set if you want to generate foreign key constraints.
+- **Incorrect column types:** Use struct tags carefully and verify custom types align with PostgreSQL types.
+- **Schema out of sync:** Consider manual migrations or clearing tables before recreating during development.
+
+### Debugging Tips
+
+- Inspect table schema with `\\d tablename` in psql.
+- Check error messages closely, especially PostgreSQL error codes.
+- Test schema changes in a development environment before production rollout.
+
+
+## Related Documentation
+
+- [Defining Your First Model](/getting-started/basic-usage/first-model)
+- [Creating Tables & Basic CRUD](/getting-started/basic-usage/schema-and-crud)
+- [Supported Data Types & Type Mapping](/api-reference/advanced-features-types/type-mapping)
+- [Transactions and Prepared Statements](/api-reference/core-orm-database/transactions-prepared)
+- [Bulk and Batch Operations](/guides/advanced-orm-patterns/bulk-operations)
+
+---
+
+This focused guide empowers you to implement a maintainable, Go-centric schema management workflow using go-pg's ORM capabilities, bridging code and database schema confidently and transparently.

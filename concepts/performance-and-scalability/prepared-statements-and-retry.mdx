@@ -1,0 +1,164 @@
+---
+title: "Prepared Statements and Retry Strategy"
+description: "See how go-pg improves performance via prepared statements and automates retries on transient errors. Get an architectural explanation of how these features are implemented to boost throughput and resilience."
+---
+
+# Prepared Statements and Retry Strategy
+
+In high-performance applications, managing how frequently queries are parsed and executed is critical to achieving both speed and reliability. go-pg enhances your database interactions by seamlessly integrating prepared statements with a robust retry mechanism to automatically recover from common transient errors. This page explores how go-pg uses these features to boost throughput and resilience while maintaining developer-friendly abstractions.
+
+---
+
+## Understanding Prepared Statements
+
+Prepared statements are a powerful technique to optimize repetitive SQL executions. They involve parsing and planning a query once on the database server and then executing it multiple times with different parameters, significantly reducing overhead.
+
+In go-pg, prepared statements are created with the `Prepare` method, which internally uses a connection-pinned pool to maintain statement lifetimes within the same connection context. This is crucial because prepared statements in PostgreSQL are scoped to a specific session one-to-one with a TCP connection.
+
+### Key Benefits
+
+- **Performance Gains**: Parsing and planning steps happen only once, reducing database CPU load and network chatter.
+- **Security**: Parameterized execution reduces SQL injection risks.
+- **Concurrency Safety**: Prepared statements in go-pg are safe for concurrent use across goroutines.
+
+### Typical Usage
+
+```go
+stmt, err := db.Prepare(`SELECT id, name FROM users WHERE status = ?`)
+if err != nil {
+    log.Fatal(err)
+}
+
+res, err := stmt.Query(&users, "active")
+// handle res and err
+```
+
+### Points to Remember
+
+- Prepared statements are tied to a connection, so go-pg uses a dedicated **sticky connection pool** when preparing statements.
+- Closing the prepared statement releases server-side resources.
+
+## Retry Strategy for Transient Errors
+
+go-pg automatically detects retriable errors during query execution and transparently retries the entire query or transaction. This mechanism prevents transient failures such as serialization conflicts or busy connection states from disrupting application logic.
+
+### What Errors Trigger Retries?
+
+Common PostgreSQL error codes checked by go-pg include:
+
+| Error Code | Condition                   | 
+|------------|-----------------------------|
+| `40001`   | Serialization failure         |
+| `53300`   | Too many connections          |
+| `55000`   | Attempted to delete invisible tuple |
+| `57014`   | Statement timeout (optional) |
+
+Network and I/O errors like `io.EOF`, unexpected EOFs, and connection timeouts are also retried.
+
+### How Retries Work
+
+- On detecting a retriable error, go-pg sleeps with an incremental backoff before retrying.
+- The retry count is capped by your configured `MaxRetries` option.
+- For statement timeouts (`57014`), retries occur only if enabled via `RetryStatementTimeout`.
+
+### User Control
+
+You can configure retry behavior in the `Options` struct when connecting:
+
+```go
+db := pg.Connect(&pg.Options{
+    MaxRetries: 3,
+    RetryStatementTimeout: true, // retry statements timed out
+})
+```
+
+## Architectural Flow
+
+```mermaid
+flowchart TD
+  start["Client issues query or exec"] --> prepareCheck{"Is query a prepared statement?"}
+  prepareCheck -- No --> getConn["Acquire connection from pool"]
+  prepareCheck -- Yes --> stickyPool["Use sticky connection pool"]
+  getConn --> writeQuery["Write query to connection"]
+  stickyPool --> writeQuery
+  writeQuery --> readResponse["Read server response"]
+  readResponse --> errorCheck{"Is error retriable?"}
+  errorCheck -- Yes --> backoff["Sleep increasing backoff"]
+  backoff --> getConn
+  errorCheck -- No --> releaseConn["Release or remove connection"]
+  releaseConn --> end["Return result or error"]
+```
+
+## How go-pg Manages Prepared Statements and Connections
+
+- **Sticky Connection Pool**: A special pool (`StickyConnPool`) pins a connection to a prepared statement to retain session context.
+- **Retry Loop**: Both the `Stmt` and `baseDB`-level query methods operate retry loops that handle connection errors transparently.
+- **Connection Initialization**: When a connection is obtained for the first time, go-pg initializes SSL/TLS and runs user-defined `OnConnect` hooks.
+
+## Best Practices and Tips
+
+- Use prepared statements for frequently executed queries to reap performance benefits.
+- Ensure `MaxRetries` is properly set to balance resilience vs latency.
+- For critical transactions involving retries, use `RunInTransaction` to wrap your queries:
+
+```go
+err := db.RunInTransaction(ctx, func(tx *pg.Tx) error {
+    _, err := tx.Exec("UPDATE accounts SET balance = balance - 100 WHERE id = ?", 1)
+    if err != nil {
+        return err
+    }
+    _, err = tx.Exec("UPDATE accounts SET balance = balance + 100 WHERE id = ?", 2)
+    return err
+})
+```
+
+- Handle returned errors explicitly to differentiate retry exhausted cases.
+
+## Common Pitfalls
+
+- Forgetting to close prepared statements leads to resource leaks on the PostgreSQL server side.
+- Relying on prepared statements in transactions without considering connection pinning can cause unexpected behavior.
+- Setting too high of a retry count can unnecessarily delay error reporting.
+
+## Troubleshooting Tips
+
+- If you see persistent errors around connection removal or cancel requests, verify your network stability and authentication.
+- Use pool stats available via `DB.PoolStats()` to monitor connection usage and errors.
+- Enable query debugging and telemetry tracing for detailed diagnostics (refer to Observability and Debugging documentation).
+
+---
+
+## Example: Using Prepared Statements with Retries
+
+```go
+stmt, err := db.Prepare("SELECT count(*) FROM users WHERE active = ?")
+if err != nil {
+    log.Fatal(err)
+}
+
+var count int
+res, err := stmt.QueryOne(pg.Scan(&count), true)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("Active users:", count)
+```
+
+The above example benefits from go-pg automatically retrying transient connection errors and using a sticky pool for the statement's lifecycle.
+
+## Summary
+
+Prepared statements and an automatic retry strategy form two pillars of go-pg's approach to efficient and resilient PostgreSQL interactions. By abstracting connection management and error recovery, go-pg empowers developers to write high-throughput Go applications that handle transient database errors gracefully without sacrificing simplicity.
+
+---
+
+## See Also
+
+- [Managing Transactions and Prepared Statements Guide](/guides/real-world-integration-patterns/transaction-management)
+- [Connection Pooling and Performance Tuning Guide](/guides/real-world-integration-patterns/performance-pooling)
+- [Error Handling & Status Codes Reference](/api-reference/common-operations-examples/error-handling-status-codes)
+- [BaseDB Source Implementation](https://github.com/go-pg/pg/blob/main/base.go)
+- [Transaction (Tx) Implementation](https://github.com/go-pg/pg/blob/main/tx.go)
+- [Prepared Statement (Stmt) Implementation](https://github.com/go-pg/pg/blob/main/stmt.go)
+
+---

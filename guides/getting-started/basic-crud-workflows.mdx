@@ -1,0 +1,388 @@
+---
+title: "Performing Basic Queries (CRUD)"
+description: "A practical walkthrough of creating, reading, updating, and deleting records using go-pg's ORM and SQL interfaces. Includes step-by-step examples for each workflow, as well as advice on scanning results and handling errors."
+---
+
+# Performing Basic Queries (CRUD) with go-pg
+
+This guide delivers a hands-on walkthrough for performing basic database operations—Create, Read, Update, and Delete (CRUD)—using go-pg’s ORM and SQL interfaces. You will learn how to manage records efficiently, scan query results, and handle errors gracefully, empowering you to manipulate PostgreSQL data confidently.
+
+---
+
+## 1. Workflow Overview
+
+### Task Description
+- Learn how to create new records, query data, update existing records, and delete entries using go-pg.
+- Understand how to work with both go-pg ORM methods and raw SQL queries.
+- Handle result scanning and error checking effectively.
+
+### Prerequisites
+- A working PostgreSQL instance and connection established with go-pg.
+- Basic knowledge of Go programming and PostgreSQL schemas.
+- Familiarity with go-pg models and database schema creation (see related `Defining Your First Model` and `Creating Tables & Basic CRUD` guides).
+
+### Expected Outcome
+- Confidently execute inserts, selects, updates, and deletes.
+- Use query methods that accept complex relations and conditions.
+- Manage bulk operations and conflict handling during inserts.
+- Handle common errors such as unique constraint violations.
+
+### Time Estimate
+Approximately 20-30 minutes to run through examples and try modifying code for your models.
+
+### Difficulty Level
+Beginner to Intermediate
+
+---
+
+## 2. Step-by-Step Instructions
+
+### Step 1: Insert Records (Create)
+Use `db.Model(...).Insert()` to add single or multiple records.
+
+```go
+user := &User{Name: "alice", Emails: []string{"alice@example.com"}}
+_, err := db.Model(user).Insert()
+if err != nil {
+    panic(err) // handle appropriately
+}
+fmt.Println(user.Id) // ID populated after insert
+```
+
+For bulk inserts, pass multiple models:
+
+```go
+user1 := &User{Name: "bob"}
+user2 := &User{Name: "carol"}
+_, err := db.Model(user1, user2).Insert()
+// Or with a slice:
+users := []User{{Name: "dave"}, {Name: "eve"}}
+_, err = db.Model(&users).Insert()
+```
+
+### Step 2: Query Records (Read)
+Retrieve records by primary key or custom filters.
+
+**Select one record by PK:**
+
+```go
+user := &User{Id: 1}
+err := db.Model(user).WherePK().Select()
+```
+
+**Select multiple records:**
+
+```go
+var users []User
+err := db.Model(&users).Select()
+```
+
+**Load associated relations (e.g., has-one, has-many):**
+
+```go
+story := new(Story)
+err := db.Model(story).
+	Relation("Author").
+	Where("story.id = ?", someStoryID).
+	Select()
+```
+
+**Select with filters and conditions:**
+
+```go
+var books []Book
+err := db.Model(&books).
+	WhereIn("id IN (?)", []int{1, 2, 3}).
+	Select()
+```
+
+### Step 3: Update Records
+Modify existing records with `Update()` or variations.
+
+**Update full record by PK:**
+
+```go
+book := &Book{ID: 1}
+err := db.Model(book).WherePK().Select()
+book.Title = "Updated Title"
+_, err = db.Model(book).WherePK().Update()
+```
+
+**Update only non-zero fields:**
+
+```go
+_, err = db.Model(book).WherePK().UpdateNotZero()
+```
+
+**Update specified columns only:**
+
+```go
+_, err = db.Model(book).
+	Column("title").
+	WherePK().
+	Update()
+```
+
+**Update with dynamic SQL:**
+
+```go
+_, err = db.Model(&book).
+	Set("title = concat(?, title, ?)", "prefix ", " suffix").
+	Where("id = ?", book.ID).
+	Update()
+```
+
+### Step 4: Delete Records
+Remove records by primary key or condition.
+
+**Delete single record:**
+
+```go
+_, err := db.Model(book).WherePK().Delete()
+```
+
+**Delete multiple records by condition:**
+
+```go
+ids := []int{1, 2, 3}
+res, err := db.Model((*Book)(nil)).Where("id IN (?)", pg.In(ids)).Delete()
+fmt.Println("Deleted rows:", res.RowsAffected())
+```
+
+### Step 5: Handling Inserts with Conflict
+Insert records with conflict resolution using `OnConflict` clause.
+
+**Insert and do nothing if conflict:**
+
+```go
+_, err := db.Model(book).OnConflict("DO NOTHING").Insert()
+```
+
+**Insert and update on conflict:**
+
+```go
+_, err := db.Model(book).
+	OnConflict("(id) DO UPDATE").
+	Set("title = EXCLUDED.title").
+	Insert()
+```
+
+### Step 6: Use Raw SQL Queries
+If you prefer SQL, use `db.Query()` and `db.QueryOne()` with scanning.
+
+```go
+var user User
+_, err := db.QueryOne(&user, `SELECT * FROM users WHERE id = ?`, 1)
+```
+
+For scanning single values:
+
+```go
+var count int
+_, err := db.QueryOne(pg.Scan(&count), `SELECT count(*) FROM users`)
+```
+
+---
+
+## 3. Examples & Code Samples
+
+### Insert and Select Example
+
+```go
+user := &User{Name: "admin", Emails: []string{"admin1@admin", "admin2@admin"}}
+_, err := db.Model(user).Insert()
+if err != nil {
+    panic(err)
+}
+fmt.Println(user)
+
+// Select by primary key
+selectedUser := &User{Id: user.Id}
+err = db.Model(selectedUser).WherePK().Select()
+fmt.Println(selectedUser)
+```
+
+### Update Specific Columns
+
+```go
+book := Book{ID: 1, Title: "Modified Title"}
+_, err := db.Model(&book).Column("title").WherePK().Update()
+```
+
+### Delete Multiple Rows
+
+```go
+ids := []int{1, 2, 3}
+res, err := db.Model((*Book)(nil)).Where("id IN (?)", pg.In(ids)).Delete()
+fmt.Println("Deleted rows:", res.RowsAffected())
+```
+
+### Query with Relations
+
+```go
+story := new(Story)
+err := db.Model(story).
+	Relation("Author").
+	Where("story.id = ?", storyId).
+	Select()
+```
+
+### Bulk Insert
+
+```go
+books := []Book{{Title: "b1"}, {Title: "b2"}}
+_, err := db.Model(&books).Insert()
+```
+
+### Insert or Update (Upsert)
+
+```go
+book := &Book{ID: 100, Title: "new title"}
+_, err := db.Model(book).
+	OnConflict("(id) DO UPDATE").
+	Set("title = EXCLUDED.title").
+	Insert()
+```
+
+---
+
+## 4. Troubleshooting & Tips
+
+### Common Issues
+- **No rows returned:** This error occurs when the select query returns no result. Check your query filters and primary key values.
+- **Duplicate key violation:** Inserting records with unique key conflicts fails unless handled with `OnConflict`.
+- **Zero Value Fields Not Updating:** Use `UpdateNotZero()` if you want to update only non-zero fields, or add `pg:",use_zero"` struct tag to allow zero values.
+- **Unknown column error when scanning:** Use `pg:",discard_unknown_columns"` in your struct tag to safely ignore columns not mapped to your model.
+
+### Best Practices
+- Use `WherePK()` whenever you want to operate on a specific record by primary key for clarity and reliability.
+- For bulk operations, use slices or multiple model parameters in `.Model(...)` for efficient batch inserts and updates.
+- Use relation loading (`Relation()`) to avoid N+1 query problems when fetching related data.
+- Always check errors returned by ORM methods for successful operations.
+
+### Performance Considerations
+- Batch inserts and updates reduce round-trips and improve throughput.
+- Use prepared statements (`db.Prepare()`) for repeated queries with different parameters.
+
+### Alternative Approaches
+- You can use raw SQL with `db.Query()` or `db.Exec()` if you need more control.
+- For complex transactions, consider using `RunInTransaction()` for better rollback/commit handling.
+
+---
+
+## 5. Next Steps & Related Content
+
+- Explore [Defining Your First Model](../getting-started/basic-usage/first-model) to master model struct design.
+- Learn about [Creating Tables & Basic CRUD](../getting-started/basic-usage/schema-and-crud) for managing schema.
+- Dive into [Advanced ORM Patterns & Best Practices](../guides/advanced-orm-patterns/working-with-associations) to work with relations:
+  - HasOne, HasMany, BelongsTo
+  - Many-to-Many relationships
+- Check out [Managing Transactions and Prepared Statements](../guides/real-world-integration-patterns/transaction-management) for robust multi-statement workflows.
+- Refer to [Error Handling & Status Codes](../../api-reference/common-operations-examples/error-handling-status-codes) for error types and recovery patterns.
+
+---
+
+## Sample Full Basic CRUD Workflow Code
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/go-pg/pg/v10"
+	"github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+	Id     int64
+	Name   string
+	Emails []string
+}
+
+func main() {
+	db := pg.Connect(&pg.Options{
+		User: "postgres",
+	})
+	defer db.Close()
+
+	err := createSchema(db)
+	if err != nil {
+		panic(err)
+	}
+
+	// Create
+	user := &User{Name: "admin", Emails: []string{"admin@example.com"}}
+	_, err = db.Model(user).Insert()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Inserted user with ID:", user.Id)
+
+	// Read
+	fetched := &User{Id: user.Id}
+	err = db.Model(fetched).WherePK().Select()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Fetched user:", fetched)
+
+	// Update
+	fetched.Name = "admin_updated"
+	_, err = db.Model(fetched).WherePK().Update()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Updated user name to:", fetched.Name)
+
+	// Delete
+	_, err = db.Model(fetched).WherePK().Delete()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Deleted user with ID:", fetched.Id)
+}
+
+func createSchema(db *pg.DB) error {
+	models := []interface{}{(*User)(nil)}
+	for _, model := range models {
+		err := db.Model(model).CreateTable(&orm.CreateTableOptions{
+			Temp: true,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+```
+
+---
+
+For a full collection of usage examples and detailed explanations, visit the [go-pg official documentation](https://pg.uptrace.dev/).
+
+
+---
+
+# References
+- [Defining Models & Mapping](../getting-started/basic-usage/first-model)
+- [Creating Tables & Basic CRUD](../getting-started/basic-usage/schema-and-crud)
+- [Error Handling & Status Codes](../../api-reference/common-operations-examples/error-handling-status-codes)
+- [Transactions and Prepared Statements](../guides/real-world-integration-patterns/transaction-management)
+- [Advanced ORM Patterns](../guides/advanced-orm-patterns/working-with-associations)
+
+---
+
+<Tip>
+Remember: Always check the returned error on every database operation. This helps catch constraint violations, connection issues, and unexpected states early.
+</Tip>
+
+<Note>
+go-pg returns zero values as SQL NULL by default. Use struct tags like `pg:",use_zero"` to override behavior and allow zero values to persist in the database.
+</Note>
+
+<Warning>
+Construct your queries using parameterized arguments or go-pg helpers like `pg.In()` to prevent SQL injection risks.
+</Warning>
+

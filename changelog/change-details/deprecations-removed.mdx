@@ -1,0 +1,192 @@
+---
+title: "Deprecations & Removals"
+description: "Documents deprecated features and APIs, their alternatives, and timelines for removal. Teaches users how to proactively refactor and future-proof their code."
+---
+
+# Deprecations & Removals
+
+This page provides essential guidance on deprecated features and APIs within go-pg, outlining alternatives and offering clear timelines for removals. Understanding these changes helps you proactively refactor your codebase, ensuring long-term compatibility and leveraging improved library capabilities.
+
+---
+
+## Understanding Deprecated Features
+
+As go-pg transitions in maintenance mode, some APIs and features have been marked deprecated to streamline the library and encourage usage of more robust alternatives. Deprecated elements remain available for a limited time but are slated for removal in upcoming major releases.
+
+**Why care about deprecations?**
+
+- **Prevent sudden breaks:** Refactor early to avoid disruptions when a deprecated feature is removed.
+- **Leverage improvements:** Adopt newer, better-designed APIs with improved maintainability and performance.
+- **Align with best practices:** Stay consistent with the evolving go-pg ecosystem and community standards.
+
+
+## Common Deprecated Features and Their Alternatives
+
+While this list is not exhaustive, it highlights notable deprecated features frequently encountered.
+
+### Connection Pooling
+
+- **Deprecated:** Certain legacy pool implementations or connection management approaches.
+- **Alternative:** Use the built-in `pool.ConnPool` with its configurable options such as `PoolSize`, `MinIdleConns`, and `IdleTimeout`.
+
+**Tip:** Refer to the [Connection Pooling and Performance Tuning](https://pg.uptrace.dev/guides/real-world-integration-patterns/performance-pooling) guide for configuration examples and best practices.
+
+
+### Authentication Methods
+
+- **Deprecated:** Older or less secure authentication mechanisms that do not comply with modern PostgreSQL standards.
+- **Alternative:** Use SASL authentication methods such as SCRAM-SHA-256, supported fully by go-pg's startup and authentication flows.
+
+**Tip:** Consult the [Authentication and Security Patterns](https://pg.uptrace.dev/api-reference/common-operations-examples/authentication-security) documentation to adopt secure authentication flows.
+
+
+### Usage Patterns
+
+- **Deprecated:** Non-context-aware functions or those failing to handle cancellations/timeouts correctly.
+- **Alternative:** Always use context-aware APIs, passing `context.Context` for all database interactions to ensure cancellation and timeout support.
+
+
+## Timeline for Removal
+
+To help plan your migration, observe the following typical lifecycle:
+
+| Stage              | Description                                         | Recommended Action           |
+|--------------------|-----------------------------------------------------|-----------------------------|
+| Deprecated         | Feature marked for removal in a future release     | Refactor code to alternatives |
+| Removal Announced  | Feature scheduled for removal in the next major release | Complete migration before release |
+| Removed            | Feature no longer available                          | Update all code and dependencies  |
+
+**Note:** go-pg is currently in maintenance mode; critical security fixes and severe bugs are addressed, but expect minimal feature additions.
+
+
+## Refactoring and Future-Proofing
+
+### Step 1: Identify Deprecated Usage
+
+- Use build or lint tools to detect deprecated APIs.
+- Review release notes and breaking changes documentation regularly.
+
+
+### Step 2: Review Alternatives
+
+- Consult API references for recommended replacements.
+- Read guides for configuration and usage patterns tailored to new APIs.
+
+
+### Step 3: Refactor in Incremental Steps
+
+- Refactor in small, testable increments.
+- Run comprehensive tests to verify expected behavior.
+
+
+### Step 4: Monitor Usage Post-Refactor
+
+- Monitor logs for warnings or usage errors.
+- Continue reviewing upstream updates for any further changes.
+
+
+<Note>
+When refactoring connection pooling code, carefully tune your pool settings to prevent connection exhaustion or latency issues.
+</Note>
+
+
+## Common Pitfalls and Troubleshooting
+
+### Ignoring Context Cancellation
+
+> Deprecated functions may block indefinitely.
+
+**Solution:** Always incorporate `context.Context` in your queries and connection pool operations.
+
+
+### Overlooking Pool Timeouts
+
+> Without configuring `PoolTimeout`, your application might hang when exhausted.
+
+**Solution:** Set sensible `PoolTimeout` values and regularly monitor pool metrics.
+
+
+### Legacy Authentication Fails with New PostgreSQL Servers
+
+> Older auth methods may be rejected.
+
+**Solution:** Upgrade to SASL-SCRAM authentication and verify server settings.
+
+
+## Practical Example: Updating Connection Pool Usage
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/go-pg/pg/v10/internal/pool"
+)
+
+func main() {
+	ctx := context.Background()
+	p := pool.NewConnPool(&pool.Options{
+		Dialer:             func(c context.Context) (net.Conn, error) { /* custom dialer implementation */ return nil, nil },
+		PoolSize:           20,
+		MinIdleConns:       5,                    // Maintain minimum idle conns
+		PoolTimeout:        5 * time.Second,      // Wait time for pool slot
+		IdleTimeout:        30 * time.Minute,     // Close idle connections after timeout
+		IdleCheckFrequency: 5 * time.Minute,      // Frequency to check idle conns
+	})
+
+	conn, err := p.Get(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	// Use the connection...
+
+	p.Put(ctx, conn) // Return to pool
+
+	fmt.Println("Connection successfully acquired and released.")
+}
+```
+
+
+## References and Further Reading
+
+- [Connection Pooling and Performance Tuning](https://pg.uptrace.dev/guides/real-world-integration-patterns/performance-pooling) (Get guidance on tuning your pools according to best practices.)
+- [Authentication and Security Patterns](https://pg.uptrace.dev/api-reference/common-operations-examples/authentication-security) (Adopt secure authentication strategies.)
+- [Error Handling & Status Codes](https://pg.uptrace.dev/api-reference/common-operations-examples/error-handling-status-codes) (Understand error propagation related to deprecated or removed features.)
+- [Release Notes & Breaking Changes](https://pg.uptrace.dev/changelog/change-details/breaking-changes) (Track all breaking changes and removals.)
+
+
+## Summary
+
+Staying ahead of deprecations in go-pg ensures your applications remain reliable and secure. This page helps you identify deprecated aspects, switch to recommended alternatives, and embrace best practices with clear migration cues. Proactive refactoring avoids disruption and leverages improved design in your PostgreSQL integration.
+
+---
+
+<AccordionGroup title="Quick Links">
+<Accordion title="Breaking Changes & Upgrade Guides">
+Refer to the [Breaking Changes](https://pg.uptrace.dev/changelog/change-details/breaking-changes) and [Upgrade Guides](https://pg.uptrace.dev/changelog/change-details/upgrade-guides) for comprehensive migration pathways.
+</Accordion>
+<Accordion title="Connection Pooling Guide">
+Explore detailed tuning and usage scenarios at [Connection Pooling and Performance Tuning](https://pg.uptrace.dev/guides/real-world-integration-patterns/performance-pooling).
+</Accordion>
+<Accordion title="Authentication Update Guide">
+Visit [Authentication and Security Patterns](https://pg.uptrace.dev/api-reference/common-operations-examples/authentication-security) to implement secure and supported authentication methods.
+</Accordion>
+</AccordionGroup>
+
+---
+
+<Tip>
+Keep your dependencies up to date and monitor upstream changelogs regularly to anticipate necessary code updates.
+</Tip>
+
+<Warning>
+Using deprecated features in production can lead to unexpected failures and security vulnerabilities when support is dropped.
+</Warning>
+
+<Check>
+Test all database interactions after refactoring to confirm behavioral consistency and performance.
+</Check>

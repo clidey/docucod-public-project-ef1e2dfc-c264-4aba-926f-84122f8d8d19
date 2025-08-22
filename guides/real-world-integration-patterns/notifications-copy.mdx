@@ -1,0 +1,212 @@
+---
+title: "Working with Notifications and Bulk Copy"
+description: "Leverage advanced PostgreSQL features such as LISTEN/NOTIFY for real-time events and COPY FROM/TO for large-scale data transfer. Includes integration patterns and troubleshooting tips."
+---
+
+# Working with Notifications and Bulk Copy
+
+Leverage PostgreSQL's advanced features such as `LISTEN`/`NOTIFY` for efficient real-time event handling and `COPY FROM`/`COPY TO` commands for large-scale data transfer. This guide provides practical workflows, integration patterns, and troubleshooting strategies to help you implement notifications and bulk copy operations using go-pg.
+
+---
+
+## 1. Working with Notifications (LISTEN/NOTIFY)
+
+### Overview
+The `LISTEN`/`NOTIFY` mechanism in PostgreSQL allows applications to receive asynchronous notifications on channels, enabling real-time communication without polling the database. In go-pg, use the `Listener` type to subscribe to notification channels and react to events.
+
+### Prerequisites
+- A working go-pg database connection (`*pg.DB`).
+- Understanding of PostgreSQL channels and notifications.
+
+### Expected Outcome
+You will be able to listen for PostgreSQL notifications on one or multiple channels and handle these notifications asynchronously.
+
+### Step-by-Step Instructions
+
+<Steps>
+<Step title="Create a Listener and Subscribe to Channels">
+To receive notifications, create a `Listener` with the database instance and specify the channels to listen on.
+```go
+ln := db.Listen(ctx, "my_channel")
+defer ln.Close()
+```
+This opens a persistent connection listening for notifications on `my_channel`.
+</Step>
+<Step title="Receive Notifications through a Go Channel">
+Use the `Channel()` method to obtain a Go channel that will deliver notifications asynchronously.
+```go
+notifChan := ln.Channel()
+for notif := range notifChan {
+    fmt.Printf("Received notification on %s: %s\n", notif.Channel, notif.Payload)
+}
+```
+This loop processes notifications as they arrive.
+</Step>
+<Step title="Send Notifications from the Database">
+To test notifications, send a `NOTIFY` command:
+```go
+_, err := db.Exec(ctx, "NOTIFY my_channel, ?", "payload data")
+if err != nil {
+    log.Fatal(err)
+}
+```
+This triggers the listener to receive the message.
+</Step>
+<Step title="Listen or Unlisten Channels Dynamically">
+To add or remove channels dynamically:
+```go
+// Start listening on more channels
+err := ln.Listen(ctx, "another_channel")
+// Stop listening on a channel
+err = ln.Unlisten(ctx, "my_channel")
+```
+</Step>
+</Steps>
+
+### Practical Tips
+- The listener maintains a health check internally by sending periodic ping notifications (`gopg:ping`).
+- Avoid calling low-level receive methods (`Receive` or `ReceiveTimeout`) after using `Channel()`; they are mutually exclusive.
+
+### Common Pitfalls
+- Ensure the listener `Close()` method is called to free underlying network resources.
+- The notification channel can become full if not consumed promptly, leading to drops logged internally.
+
+---
+
+## 2. Bulk Data Transfer with COPY FROM / COPY TO
+
+### Overview
+The `COPY` command is a high-performance PostgreSQL feature for bulk importing or exporting data. go-pg provides `CopyFrom` and `CopyTo` methods to use this feature directly.
+
+### Prerequisites
+- A valid go-pg database connection.
+- Familiarity with PostgreSQL COPY syntax.
+
+### Expected Outcome
+Perform large-scale data imports from readers (e.g., files, buffers) and exports to writers efficiently using PostgreSQL's native bulk-copy protocol.
+
+### Step-by-Step Instructions
+
+<Steps>
+<Step title="Using CopyFrom for Importing Data">
+Use `CopyFrom` to import CSV or other text data from an `io.Reader` into a table.
+
+```go
+// Example: import CSV data into a temporary table
+_, err := db.Exec(`CREATE TEMP TABLE words(word text, len int)`)
+if err != nil {
+    log.Fatal(err)
+}
+
+reader := strings.NewReader("hello,5\nfoo,3\n")
+_, err = db.CopyFrom(reader, `COPY words FROM STDIN WITH CSV`)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+This sends the data directly to PostgreSQL’s COPY protocol, bypassing per-row inserts.
+</Step>
+<Step title="Using CopyTo for Exporting Data">
+Export data efficiently using `CopyTo` with an `io.Writer`.
+
+```go
+var buf bytes.Buffer
+_, err := db.CopyTo(&buf, `COPY words TO STDOUT WITH CSV`)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(buf.String())
+```
+
+This reads data from PostgreSQL and writes it to your writer, such as a file or buffer.
+</Step>
+</Steps>
+
+### Best Practices
+- Use CSV or binary format options supported by PostgreSQL COPY for your data needs.
+- Always create or prepare the target table/schema before executing COPY.
+- Use context with timeouts if importing/exporting large data to avoid hanging operations.
+
+### Troubleshooting
+- COPY errors frequently arise from data format mismatches; ensure data encoding and table schema align.
+- Look for PostgreSQL error messages for hints on invalid byte sequences or constraint violations.
+- Use PostgreSQL logs and go-pg internal logging for diagnosing data transfer failures.
+
+---
+
+## Troubleshooting Common Issues
+
+### Notifications
+- **Listener closed error:** If you see `pg: listener is closed`, ensure you are not using a closed listener and always call `Close()` explicitly.
+- **Dropped notifications:** Increase the channel buffer size with `ChannelSize(size int)` if your application processes notifications slowly.
+- **Connection lost:** Listener auto-reconnects on ping failure but check network stability to minimize interruptions.
+
+### Bulk Copy
+- **COPY FROM syntax errors:** Confirm the COPY SQL string matches PostgreSQL expected syntax.
+- **Data encoding issues:** Make sure input data matches PostgreSQL encoding (typically UTF8).
+- **Timeouts:** Use context with timeout and increase the timeout for large datasets.
+
+---
+
+## Additional Integration Patterns
+
+- Combine notifications with bulk copy by triggering `NOTIFY` after a large import completes to signal other services.
+- Use transactions around COPY operations to maintain data consistency.
+- Monitor connection pool stats during heavy COPY operations to avoid exhausting connections.
+
+---
+
+## Example: Listening for Notifications and Handling Bulk Copy
+
+```go
+func main() {
+    ctx := context.Background()
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    // Setup listener
+    ln := db.Listen(ctx, "import_notifications")
+    defer ln.Close()
+
+    notifChan := ln.ChannelSize(10)
+
+    go func() {
+        for notif := range notifChan {
+            fmt.Printf("Notification received: channel=%s, payload=%s\n", notif.Channel, notif.Payload)
+
+            // Handle notifications, for instance, trigger post-import processing
+        }
+    }()
+
+    // Bulk import example
+    csvData := strings.NewReader("apple,1\nbanana,2\n")
+    _, err := db.CopyFrom(csvData, `COPY fruits(name, quantity) FROM STDIN WITH CSV`)
+    if err != nil {
+        panic(err)
+    }
+
+    // Notify listeners after successful import
+    _, err = db.Exec(ctx, `NOTIFY import_notifications, ?`, "fruits_imported")
+    if err != nil {
+        panic(err)
+    }
+
+    // Wait or continue application execution
+    time.Sleep(time.Second)
+}
+```
+
+This pattern shows how to integrate notification listening with bulk import notifications.
+
+---
+
+## Next Steps & Related Content
+- Explore [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling) to optimize heavy COPY and notification scenarios.
+- Dive into [Managing Transactions and Prepared Statements](/guides/real-world-integration-patterns/transaction-management) for wrapping copy operations in transactions.
+- Consult the API Reference on [Notifications: LISTEN & NOTIFY](/api-reference/core-orm-database/notifications-listening) for low-level details.
+- Learn about [Bulk and Batch Operations](/guides/advanced-orm-patterns/bulk-operations) for other efficient data modification patterns.
+
+---
+
+By following this guide, you unlock PostgreSQL's powerful asynchronous notification and high-performance bulk copy capabilities within go-pg, enabling responsive, scalable, and efficient database applications.

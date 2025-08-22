@@ -1,0 +1,330 @@
+---
+title: "Quickstart and Common Workflows"
+description: "Jump in with ready-to-use code examples covering essential workflows—connecting, querying, using models, and more. Perfect for getting up and running in minutes."
+---
+
+# Quickstart and Common Workflows
+
+Dive into practical, ready-to-use examples that get you interacting quickly with go-pg. This page guides you through essential workflows—from connecting to PostgreSQL, defining models, executing queries, to managing transactions—empowering you to build real-world applications in minutes.
+
+---
+
+## Establishing a Database Connection
+
+Before performing any database operation, creating a stable connection is paramount. go-pg offers intuitive configuration options to connect smoothly to your PostgreSQL server.
+
+### Typical Connection Setup
+
+```go
+import (
+	"github.com/go-pg/pg/v10"
+)
+
+// Define connection options
+opt := &pg.Options{
+	Addr:     "localhost:5432",
+	User:     "postgres",
+	Password: "your_password",
+	Database: "your_db",
+}
+
+// Establish connection
+db := pg.Connect(opt)
+// Always defer closing when done
+defer db.Close()
+
+// Test the connection with a simple ping
+if err := db.Ping(ctx); err != nil {
+	panic("Failed to connect to database: " + err.Error())
+}
+```
+
+Every connection formed is managed in a pool behind the scenes for performance and reliability. For details on tuning connection pools, see the [Connection Pooling and Performance Tuning guide](/guides/real-world-integration-patterns/performance-pooling).
+
+<Note>
+Always verify your connection parameters and test connectivity early to avoid runtime surprises.
+</Note>
+
+---
+
+## Defining Models: Structs That Map to Tables
+
+go-pg enables you to define Go structs that map naturally to PostgreSQL tables. This lets you work with your database in a type-safe, idiomatic way.
+
+### Example: Define a User Model
+
+```go
+type User struct {
+	ID     int64  `pg:"id,pk"`
+	Name   string `pg:"name,notnull"
+	Email  string `pg:"email,unique"
+	Active bool   `pg:"active,default:true"
+}
+```
+
+- Use struct tags to specify column names, primary keys (`pk`), uniqueness, and constraints.
+- Define zero values or defaults directly in tags.
+
+After defining models, go-pg can automatically create corresponding tables or you can manage schema migrations separately.
+
+---
+
+## Executing Basic Queries
+
+Once connected and models are defined, you interact with your database primarily through query methods attached to the `DB` or `Tx` objects.
+
+### Fetching Records
+
+To retrieve records easily, `Select` is your go-to method.
+
+```go
+var users []User
+err := db.Model(&users).Where("active = ?", true).Select()
+if err != nil {
+	panic(err)
+}
+fmt.Println("Active users:", users)
+```
+
+### Inserting Records
+
+Inserting a new user record is just as straightforward:
+
+```go
+user := &User{
+	Name:  "Alice",
+	Email: "alice@example.com",
+}
+
+err := db.Insert(user)
+if err != nil {
+	panic(err)
+}
+```
+
+### Updating Records
+
+```go
+user.Active = false
+err = db.Update(user)
+if err != nil {
+	panic(err)
+}
+```
+
+### Deleting Records
+
+```go
+err = db.Delete(user)
+if err != nil {
+	panic(err)
+}
+```
+
+<Info>
+These CRUD operations respect hooks and constraints you define, allowing you to extend or customize behaviors with ease.
+</Info>
+
+---
+
+## Managing Transactions
+
+Transactions ensure your operations are atomic and consistent, critical for complex or sensitive workflows.
+
+### Basic Transaction Usage
+
+```go
+err := db.RunInTransaction(ctx, func(tx *pg.Tx) error {
+	user := &User{Name: "Bob"}
+	if err := tx.Insert(user); err != nil {
+		return err
+	}
+	// Update other entities
+	// ...
+	return nil
+})
+
+if err != nil {
+	panic("transaction failed: " + err.Error())
+}
+```
+
+This pattern automatically commits if the function returns `nil`, or rolls back if an error occurs.
+
+### Advanced Transaction Control
+
+If you need finer control, use `Begin()`, `Commit()`, and `Rollback()` explicitly:
+
+```go
+tx, err := db.Begin()
+if err != nil {
+	panic(err)
+}
+
+// Perform operations
+err = tx.Insert(&User{Name: "Carol"})
+if err != nil {
+	tx.Rollback()
+	panic(err)
+}
+
+err = tx.Commit()
+if err != nil {
+	panic(err)
+}
+```
+
+<Warning>
+Avoid leaving transactions open—always commit or rollback promptly to prevent connection leaks.
+</Warning>
+
+For a deeper understanding, see the [Managing Transactions and Prepared Statements Guide](/guides/real-world-integration-patterns/transaction-management).
+
+---
+
+## Running Raw Queries
+
+Sometimes you need to execute SQL directly. go-pg gives you methods to run raw queries with parameters safely.
+
+```go
+res, err := db.Exec("UPDATE users SET active = FALSE WHERE last_login < now() - interval '1 year'")
+if err != nil {
+	panic(err)
+}
+count, _ := res.RowsAffected()
+fmt.Printf("Deactivated %d users", count)
+```
+
+You can also fetch results into structs:
+
+```go
+var count int
+_, err := db.QueryOne(pg.Scan(&count), "SELECT count(*) FROM users")
+if err != nil {
+	panic(err)
+}
+fmt.Printf("Total users: %d", count)
+```
+
+---
+
+## Handling Connection Pooling Transparently
+
+go-pg manages connection pooling internally, optimizing resource usage and performance for your app.
+
+### Pool Options Example
+
+When creating a `pg.Options`, you can configure:
+
+- `PoolSize`: max connections in the pool (default 10)
+- `MinIdleConns`: minimum idle connections maintained
+- `IdleTimeout`: how long idle connections remain before being closed
+- `MaxConnAge`: max age for any connection
+- `PoolTimeout`: wait timeout for acquiring connections
+
+Example:
+
+```go
+opt := &pg.Options{
+	Addr:        "localhost:5432",
+	User:        "postgres",
+	Password:    "password",
+	Database:    "mydb",
+	PoolSize:    20,
+	MinIdleConns: 5,
+	IdleTimeout:  time.Minute * 5,
+	PoolTimeout:  time.Second * 30,
+}
+db := pg.Connect(opt)
+```
+
+### Observing Pool Stats
+
+You can introspect your pool state anytime:
+
+```go
+stats := db.Pool().Stats()
+fmt.Printf("Connections: total=%d, idle=%d, hits=%d, misses=%d, timeouts=%d",
+	stats.TotalConns, stats.IdleConns, stats.Hits, stats.Misses, stats.Timeouts)
+```
+
+This insight is valuable for tuning and troubleshooting your database connections.
+
+---
+
+## Common Workflow Example: Creating and Querying Users
+
+Putting it all together, here’s a comprehensive user flow illustrating typical usage:
+
+```go
+func main() {
+	ctx := context.Background()
+	// Connect to DB
+	db := pg.Connect(&pg.Options{
+		Addr:     "localhost:5432",
+		User:     "postgres",
+		Password: "password",
+		Database: "mydb",
+	})
+	defer db.Close()
+
+	// Create a new user
+	newUser := &User{Name: "Eve", Email: "eve@example.com"}
+	if err := db.Insert(newUser); err != nil {
+		panic(err)
+	}
+
+	// Query active users
+	var activeUsers []User
+	if err := db.Model(&activeUsers).Where("active = ?", true).Select(); err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Active users:", activeUsers)
+}
+```
+
+This example demonstrates how quickly you can start with go-pg, leverage connection management, and run straightforward model-backed queries.
+
+---
+
+## Tips for Success
+
+- Always manage connections responsibly by closing the `DB` instance when done.
+- Use transactions when multiple changes must be atomic.
+- Tune pool options according to your app’s load to improve scalability.
+- Use structured error handling to diagnose query and connection issues effectively.
+
+<Callout>
+Refer to the following guides for deeper dives:
+- [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling)
+- [Managing Transactions and Prepared Statements](/guides/real-world-integration-patterns/transaction-management)
+- [Debugging and Observability with go-pg](/guides/real-world-integration-patterns/observability-debugging)
+</Callout>
+
+---
+
+## Troubleshooting Common Pitfalls
+
+| Issue                       | Cause                                            | Resolution                             |
+|-----------------------------|-------------------------------------------------|--------------------------------------|
+| Connection refused          | Wrong host/port or server down                   | Verify DB config and network         |
+| Authentication failed       | Invalid user/password                            | Confirm credentials                  |
+| Pool timeouts on Get()      | Exhausted pool or slow DB response               | Increase pool size or optimize queries|
+| Transactions left open      | Code forgot to commit or rollback                | Always defer rollback or use RunInTransaction|
+
+Consult the [Troubleshooting Installation and Connection Errors guides](/getting-started/troubleshooting/installation-errors) for detailed diagnostics.
+
+---
+
+## Reference Links
+
+- [Connection Pooling and Performance Tuning Guide](/guides/real-world-integration-patterns/performance-pooling)
+- [Transaction Management Guide](/guides/real-world-integration-patterns/transaction-management)
+- [Observability and Debugging Guide](/guides/real-world-integration-patterns/observability-debugging)
+- [Basic Usage: Connecting to PostgreSQL](/getting-started/basic-usage/initial-connection)
+- [Defining Models](/guides/getting-started/modeling-data-structs)
+
+---
+
+Your journey to building Go applications backed by PostgreSQL starts here—empowered by go-pg's idiomatic, efficient, and robust database interactions.

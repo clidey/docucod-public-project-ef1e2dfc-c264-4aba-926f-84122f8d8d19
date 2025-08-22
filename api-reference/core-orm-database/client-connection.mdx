@@ -1,0 +1,281 @@
+---
+title: "Database Client and Connections"
+description: "Learn how to establish database connections, configure connection options, manage connection pools, and execute low-level queries. Quickly get started with connecting to PostgreSQL from your Go application, handle authentication, and configure the connection lifecycle."
+---
+
+# Database Client and Connections
+
+Unlock the power of go-pg's robust PostgreSQL client to create, manage, and optimize database connections tailored for high-performance Go applications. This guide walks you through setting up database connection options, establishing secure connections, managing connection pooling, and executing low-level queries seamlessly.
+
+---
+
+## 1. Introduction
+
+Connecting to a PostgreSQL database efficiently and reliably is foundational for any application. go-pg simplifies this process by providing a highly configurable client that integrates connection options with advanced connection pooling and lifecycle management to keep your app responsive and resource-efficient.
+
+In this page, you will learn how to:
+
+- Configure connection options including authentication and timeouts
+- Instantiate and manage individual and pooled database connections
+- Understand connection pooling strategies including single, sticky, and multi-connection pools
+- Perform low-level read and write operations with connections
+
+This empowers you to build scalable, resilient database interactions with confidence.
+
+---
+
+## 2. Connection Configuration: The `Options` Structure
+
+The journey begins with tuning your connection parameters through the `Options` struct. This is your central place to specify how go-pg connects to PostgreSQL servers.
+
+### Key Configuration Parameters
+
+| Option                  | Description                                                                                         | Default / Note                                                        |
+|-------------------------|-------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| `Network`               | Network protocol to use (`tcp` or `unix`).                                                       | `tcp`                                                                |
+| `Addr`                  | Address for PostgreSQL (host:port or Unix socket path)                                          | Defaults to `localhost:5432` for TCP, `.../.s.PGSQL.5432` for Unix  |
+| `Dialer`                | Custom function to create a network connection                                                  | Defaults to standard net dialer with `DialTimeout`                   |
+| `User`                  | Database username                                                                               | From `PGUSER` env or 'postgres'                                      |
+| `Password`              | Database password                                                                              | From `PGPASSWORD` env or 'postgres'                                  |
+| `Database`              | Database name                                                                                   | From `PGDATABASE` env or 'postgres'                                  |
+| `ApplicationName`       | Application name sent to PostgreSQL server (appears in server logs)                             | Empty by default                                                     |
+| `TLSConfig`             | TLS configuration for secure connections                                                       | By default insecure skip verify enabled                              |
+| `DialTimeout`           | Timeout for establishing connections                                                           | 5 seconds                                                           |
+| `ReadTimeout`           | Socket read timeout                                                                            | 0 (no timeout)                                                      |
+| `WriteTimeout`          | Socket write timeout                                                                           | 0 (no timeout)                                                      |
+| `MaxRetries`            | Maximum query retries                                                                          | 0 (no retries)                                                     |
+| `RetryStatementTimeout` | Whether to retry queries canceled by statement timeout                                         | false                                                              |
+| `MinRetryBackoff`       | Minimum backoff between retries                                                               | 250ms                                                              |
+| `MaxRetryBackoff`       | Maximum backoff between retries                                                               | 4s                                                                 |
+| `PoolSize`              | Max open connections in the pool                                                              | 10 × `runtime.NumCPU()`                                             |
+| `MinIdleConns`          | Minimum idle connections maintained                                                            | 0 (disabled)                                                       |
+| `MaxConnAge`            | Max lifetime duration for connections                                                         | 0 (no limit)                                                      |
+| `PoolTimeout`           | Wait time for a free connection before error                                                   | 30s or `ReadTimeout` + 1s                                              |
+| `IdleTimeout`           | Idle connection timeout before closing                                                        | 5 minutes                                                         |
+| `IdleCheckFrequency`    | How often idle connections are checked for expiration                                          | 1 minute                                                         |
+| `ReadBufferInitialSize` | Initial buffer size for connection reads                                                      | 1MB                                                               |
+| `WriteBufferInitialSize`| Initial buffer size for connection writes                                                     | 64KB                                                             |
+
+---
+
+### Using Connection URL
+
+The `ParseURL` method enables quick, standard URL parsing for connection parameters, supporting schemes like `postgres://` and `postgresql://`, with respected options for SSL mode, application name, and connection timeout.
+
+```go
+options, err := pg.ParseURL("postgres://user:password@localhost:5432/mydb?sslmode=disable")
+if err != nil {
+    panic(err)
+}
+```
+
+### Best Practices
+- Always specify `TLSConfig` appropriately to secure your database credentials and connection.
+- Use environment variables (`PGHOST`, `PGPORT`, `PGUSER`, etc.) to avoid hardcoding sensitive information.
+- Adjust `PoolSize` to match application concurrency and database server capabilities.
+
+---
+
+## 3. Establishing Connections and Connection Pools
+
+Behind the scenes, go-pg manages network connections through advanced pooling implementations providing efficiency, scalability, and reliability.
+
+### 3.1 The Basic Connection: `Conn`
+
+The `Conn` type represents a single network connection to a PostgreSQL server.
+
+Key features:
+- Tracks metadata such as connection creation and usage timestamps
+- Supports atomic tracking of usage to aid in connection lifecycle management
+- Allows reading and writing operations with deadlines respecting context and timeouts
+
+Example of creating a new connection from a network socket:
+
+```go
+rawNetConn, err := net.Dial("tcp", "localhost:5432")
+conn := pool.NewConn(rawNetConn, poolInstance)
+```
+
+### 3.2 Connection Lifecycle Management
+
+The `Conn` type controls deadlines for read/write operations, ensuring queries do not hang indefinitely.
+
+Internally, the `deadline` method balances context deadlines and configured timeouts to determine the proper timeout for operations.
+
+### 3.3 Connection Pools: Manage Connections at Scale
+
+go-pg supports multiple pool implementations, each tailored for different use cases to maximize performance. All pools implement the `Pooler` interface.
+
+| Pool Type             | Description                                                                                          |
+|-----------------------|--------------------------------------------------------------------------------------------------|
+| `ConnPool`            | General purpose connection pool with configurable size, idle connections, and stale connection reaping.
+| `StickyConnPool`      | Ensures the same connection is reused on repeated calls for affinity (e.g., for session state).
+| `SingleConnPool`      | Wraps a single connection, useful for dedicated long-running connections.
+
+#### `ConnPool` Highlights
+- Controls number of open connections up to `PoolSize`
+- Maintains minimum number of idle connections (`MinIdleConns`)
+- Reaps stale connections based on `IdleTimeout` and `MaxConnAge`
+- Supports blocking clients waiting for free connections with `PoolTimeout`
+- Provides detailed statistics on hits, misses, and timeouts
+
+Here's how to instantiate a new connection pool using options:
+
+```go
+opt := &pg.Options{PoolSize: 20, MinIdleConns: 5}
+pool := newConnPool(opt)
+```
+
+#### Using the Pool Interface
+
+- `Get(ctx) (*Conn, error)` obtains a connection, waiting if necessary
+- `Put(ctx, *Conn)` returns a connection to the pool
+- `Remove(ctx, *Conn, error)` removes and closes a connection
+- `Close()` shuts down the pool and closes all connections
+
+#### Common Pooling Workflow
+
+<Steps>
+<Step title="Acquire a connection">
+```go
+conn, err := pool.Get(ctx)
+if err != nil {
+    // Handle error
+}
+```
+</Step>
+<Step title="Use the connection">
+```go
+// execute query or commands on conn
+```
+</Step>
+<Step title="Return connection to pool">
+```go
+pool.Put(ctx, conn)
+```
+</Step>
+</Steps>
+
+### 3.4 Specialized Pools
+
+The `StickyConnPool` provides connection affinity by always returning the same connection once it has been initialized, useful in certain transaction or session contexts.
+
+The `SingleConnPool` wraps a single connection and is mostly used internally or for dedicated use cases.
+
+---
+
+## 4. Low-Level Connection Operations
+
+Sometimes you need granular control over how data is read from or written to the PostgreSQL server using connections.
+
+### 4.1 Reading and Writing with Contextual Deadlines
+
+Use `Conn.WithReader` and `Conn.WithWriter` for executing user-provided functions that read from or write to the connection while respecting context deadlines and timeouts.
+
+Example writing to a connection:
+
+```go
+err := conn.WithWriter(ctx, 5*time.Second, func(wb *WriteBuffer) error {
+    // prepare query in wb
+    wb.Write([]byte("SELECT 1"))
+    return nil
+})
+```
+
+Example reading from a connection:
+
+```go
+err := conn.WithReader(ctx, 5*time.Second, func(rd *ReaderContext) error {
+    // process response
+    return nil
+})
+```
+
+### 4.2 Connection Metadata and Tracking
+
+`Conn` exposes:
+
+- `RemoteAddr()` to get the peer address
+- `UsedAt()` provides the latest timestamp when the connection was used
+- `NextID()` generates incrementing IDs for tracking or tagging commands
+
+### 4.3 Closing Connections
+
+Always close connections properly after use or when removing them from a pool to avoid resource leaks:
+
+```go
+err := conn.Close()
+if err != nil {
+    // handle error
+}
+```
+
+---
+
+## 5. Troubleshooting and Best Practices
+
+### Connection Pooling Tips
+
+- Configure `MinIdleConns` to keep warm connections ready when establishing connections is slow
+- Set `IdleTimeout` and `MaxConnAge` judiciously to recycle connections before the server closes them
+- Use `PoolTimeout` to avoid indefinite waiting for a free connection
+- Monitor pool statistics (`Stats()`) to tune pool size and detect bottlenecks
+
+### Common Challenges
+
+- Connection timeouts often stem from misconfigured `DialTimeout`, `ReadTimeout`, or network/firewall issues
+- Excessive `PoolSize` can overwhelm the database server or exceed resource limits
+- Forgotten `Put()` calls after `Get()` will lead to connection exhaustion
+
+### Error Handling
+
+Handle errors immediately after acquiring connections and after query execution; always cleanly return or remove connections accordingly.
+
+---
+
+## 6. Illustrative Mermaid Diagram: Connection Pool Workflow
+
+```mermaid
+flowchart TD
+
+    Start([Application Request]) --> GetConn["Pool.Get(ctx) - Obtain Connection"]
+    GetConn -->|Idle Connection Available| IdleConn["Reuse Idle Connection"]
+    GetConn -->|No Idle Connection| CreateConn["Create New Connection"]
+    CreateConn --> UseConn["Use Connection for Query Execution"]
+    IdleConn --> UseConn
+    UseConn --> ReturnConn["Pool.Put(ctx, conn)"]
+    UseConn --> RemoveConn["Pool.Remove(ctx, conn, err)"]
+    ReturnConn -->|Connection Healthy| PoolIdle["Return to Idle Pool"]
+    ReturnConn -->|Connection Stale| RemoveConn
+    RemoveConn --> CloseConn["Close Connection"]
+    CloseConn --> End([Resource Cleanup])
+    PoolIdle --> End
+
+    subgraph Connection Pool
+      GetConn
+      IdleConn
+      CreateConn
+      ReturnConn
+      PoolIdle
+      RemoveConn
+      CloseConn
+    end
+
+```
+
+---
+
+## 7. Additional Resources
+
+- [Connecting to PostgreSQL Guide](/getting-started/basic-usage/initial-connection)
+- [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling)
+- [Resolving Connection Problems](/getting-started/troubleshooting/connection-errors)
+- [Architecture Overview](/overview/architecture-and-core-concepts/architecture-overview)
+
+
+---
+
+## 8. Summary
+
+This documentation introduced you to go-pg's connection client and pool mechanisms, emphasizing clear configuration, reliable lifecycle management, and practical usage patterns for connection acquisition and release. By mastering these concepts, you ensure your Go application's database interactions are both performant and robust.
+

@@ -1,0 +1,167 @@
+---
+title: "Observability and Instrumentation"
+description: "Understand the points of integration for logging, monitoring, and distributed tracing using packages like `pgotel`. Gain a conceptual view of where and how to instrument database operations for production-grade visibility."
+---
+
+# Observability and Instrumentation
+
+Unlocking deep visibility into your database operations is critical to building reliable and performant applications. This page guides you through the fundamental concepts and integration points for observability and instrumentation in go-pg, with a focus on how and where to hook into logging, monitoring, and distributed tracing for production-grade insights.
+
+---
+
+## Why Observability Matters in Database Operations
+
+Imagine you're operating a high-traffic service backed by PostgreSQL. Unexpected errors, slow queries, or connection issues can silently degrade your app and frustrate users. Without proper instrumentation, diagnosing these problems becomes a guessing game.
+
+Observability tools transform database interactions into actionable intelligence by:
+
+- Capturing query performance metrics
+- Logging errors with context
+- Enabling distributed tracing across your application stack
+
+This empowers you to quickly uncover root causes, monitor health trends, and make informed optimizations.
+
+---
+
+## Points of Integration
+
+### 1. Logging
+
+Logging is your first line of defense for real-time visibility and retrospective analysis.
+
+- **Internal Logging Interface:** go-pg provides a built-in logging interface (`internal/log.go`) that writes warnings, deprecation notices, and other messages to standard error by default. This logging can capture connection lifecycle events, query errors, and pool statistics.
+
+- **Using Debug Hooks:** For query-level logging, the `pgdebug` extension adds a query hook that logs queries along with errors. This is ideal for development and debugging scenarios:
+
+  ```go
+  db.AddQueryHook(pgdebug.NewDebugHook())
+  ```
+
+- **Best Practice:** Enable verbose query logging only in non-production environments or selectively on problematic transactions to avoid log flooding.
+
+
+### 2. Metrics and Monitoring
+
+Monitoring aggregates key operational metrics for ongoing health and capacity planning.
+
+- **Connection Pool Stats:** go-pg exposes detailed metrics such as connection hits, misses, timeouts, total and idle connections, and stale connection counts. Access these via the connection pool `Stats()` method for integration with Prometheus or other monitoring systems.
+
+- **Typical Workflow:** Periodically poll and export these stats with your app’s metrics endpoint for real-time visualization and alerting.
+
+- **Performance Tips:** Tune pool parameters (like PoolSize, MinIdleConns, and IdleTimeout) based on observed metrics to maximize throughput and minimize connection churn.
+
+
+### 3. Distributed Tracing with OpenTelemetry (`pgotel`)
+
+Tracing lets you visualize the journey of a query through your system and across services.
+
+- **Purpose:** Instrumenting database operations with OpenTelemetry enables end-to-end tracing. It provides granular spans for query execution times, errors, and call stack context.
+
+- **How It Works:** go-pg’s `pgotel` package implements a `QueryHook` that starts and ends spans around each query execution. It extracts query details, operation types (`INSERT`, `SELECT`, etc.), error status, affected row counts, and contextual code location.
+
+- **Setup Example:**
+
+  ```go
+  import (
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/extra/pgotel/v10"
+  )
+
+  db := pg.Connect(&pg.Options{...})
+  db.AddQueryHook(pgotel.NewTracingHook())
+  ```
+
+- **Instrumentation Details:**
+  - The span name reflects the query operation.
+  - Query text is truncated with soft and hard limits to avoid excessive overhead.
+  - Attributes include database system, SQL statement, connection info, and error details.
+  - Stack info (function, file, line) helps correlate spans to source code.
+
+- **Advanced Use:** Configure OpenTelemetry exporters and tracer providers (e.g., Jaeger, Zipkin, or stdout) to visualize your traces. See the example in `extra/pgotel/example/main.go` for how to connect to an OpenTelemetry SDK.
+
+---
+
+## Instrumentation Workflow
+
+This diagram illustrates the core workflow for how database operations move through observability layers:
+
+```mermaid
+flowchart TD
+  A[User Application] --> B[go-pg ORM]
+  B --> C[Connection Pool]
+  C --> D[Database - PostgreSQL]
+  B -->|Query Hooks| E[Logging & Debug]
+  B -->|Query Hooks| F[pgotel Tracing Hook]
+  F --> G[OpenTelemetry Tracer Provider]
+  E --> H[Application Logs]
+  G --> I[Tracing Backends (Jaeger, Zipkin)]
+  C -.-> J[Pool Metrics Exporter]
+  J --> K[Monitoring Systems (Prometheus)]
+
+  %% Styling
+  classDef observability fill:#f9f,stroke:#333,stroke-width:2px;
+  class E,F,J observability;
+```
+
+---
+
+## Best Practices for Instrumenting go-pg
+
+- **Selective Hook Activation:** Only enable verbose debug hooks in development or when diagnosing specific issues.
+
+- **Leverage Context:** Pass `context.Context` through your queries and transactions so that tracing spans properly correlate with upstream requests.
+
+- **Monitor Pool Metrics:** Regularly review connection pool stats to adjust pool sizing and timeouts matching workload patterns.
+
+- **Limits on Query Logging:** Use the query length boundaries in `pgotel` to avoid performance degradation or exposure of sensitive data.
+
+- **Handle Errors Thoughtfully:** Instrumentation captures errors but should not disrupt normal query flows. Ensure graceful fallback.
+
+- **Use Structured Logging:** If extending internal logging, adopt structured, machine-readable logging formats for integration with SIEM and log aggregators.
+
+---
+
+## Troubleshooting Common Observability Issues
+
+<AccordionGroup title="Troubleshooting Observability Setup">
+<Accordion title="Traces Not Appearing in Backend">
+- Verify Tracer Provider registration and exporter configuration.
+- Confirm the context passed to database calls includes active spans.
+- Check sampling rates; reduce if too aggressive.
+</Accordion>
+<Accordion title="Excessive Log Volume in Production">
+- Disable or restrict verbose debug hooks.
+- Use log levels or filtering middleware.
+- Rotate and archive logs regularly.
+</Accordion>
+<Accordion title="Connection Pool Metrics Show High Misses and Timeouts">
+- Increase `PoolSize` and `MinIdleConns`.
+- Investigate long-running queries blocking connections.
+- Check network connectivity and database responsiveness.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Summary
+
+Observability in go-pg hinges on integrating logging, metrics, and distributed tracing effectively. With tools like `pgotel` for OpenTelemetry tracing and built-in connection pool metrics, users gain complete visibility into query performance, errors, and resource utilization. Implementing these integrations with strategic configuration and context propagation prepares your application for robust monitoring and rapid debugging in production environments.
+
+---
+
+## Additional Resources
+
+- [pgotel README and Usage](https://github.com/go-pg/pg/blob/main/extra/pgotel/README.md)
+- [Example: OpenTelemetry Tracing Setup](https://github.com/go-pg/pg/blob/main/extra/pgotel/example/main.go)
+- [DebugHook for Query Logging](https://github.com/go-pg/pg/blob/main/extra/pgdebug/pgdebug.go)
+- [Connection Pooling Overview](https://pg.uptrace.dev/concepts/core-architecture/connection-pooling-and-lifecycle/)
+- [Observability and Debugging Guide](https://pg.uptrace.dev/guides/real-world-integration-patterns/observability-debugging/)
+
+---
+
+## See Also
+
+- **Connection Pooling and Lifecycle:** Deep dive into connection handling and tuning.
+- **Transaction Model:** Understand tracing and instrumentation around transactions.
+- **Debugging with Logs and Trace:** Practical techniques to troubleshoot database issues.
+- **Performance and Scalability:** How tracing helps optimize complex query patterns.

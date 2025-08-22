@@ -1,0 +1,209 @@
+---
+title: "Solving Connection Problems"
+description: "Helps you diagnose and resolve errors when connecting to PostgreSQL. Details common authentication, network, and configuration mistakes, and shows how to use error messages for rapid resolution."
+---
+
+# Solving Connection Problems
+
+This guide helps you diagnose and resolve errors encountered when connecting to a PostgreSQL database using go-pg. It focuses on common authentication, network, and configuration issues, demonstrating how to leverage error messages and debug output for rapid resolution.
+
+---
+
+## 1. Understanding Connection Errors
+
+Connection failures can stem from authentication problems, network misconfigurations, or client-side setup errors. Understanding the root causes helps you quickly resolve issues and restore database access.
+
+### Common Error Types
+
+- **Authentication Failures**: Invalid credentials, unsupported authentication methods, or password issues.
+- **Network Errors**: Unreachable hosts, firewalled ports, or misconfigured socket paths.
+- **Configuration Issues**: Incorrect connection options, unsupported TLS settings, or resource limits.
+
+
+## 2. Diagnosing Authentication Issues
+
+PostgreSQL supports multiple authentication methods. go-pg automatically negotiates these during connection startup. Identifying authentication failures requires careful attention to error messages.
+
+### Key Authentication Error Messages
+
+- `pg: unknown authentication message response` — The server sent an unexpected authentication type that go-pg does not support.
+- `pg: password authentication failed for user` — The provided username or password is incorrect.
+- `pg: SASL: got <unexpected message>, wanted <expected>` — SASL authentication failed.
+
+### Action Steps for Authentication Failures
+
+<Steps>
+<Step title="Verify Credentials">
+Double-check the username and password in your `Options` configuration or environment variables.
+</Step>
+<Step title="Confirm Authentication Method">
+PostgreSQL can be configured to require cleartext, MD5, or SCRAM authentication. go-pg supports these, but unsupported methods can cause failures. Check your PostgreSQL `pg_hba.conf` settings.
+</Step>
+<Step title="Use Cleartext/MD5 Passwords When Required">
+Ensure your password complies with the authentication method configured on the server.
+</Step>
+<Step title="Check SASL Configuration">
+If using SCRAM authentication (`authenticationSASL`), verify that your PostgreSQL server and client support the required SASL mechanism (typically SCRAM-SHA-256).
+</Step>
+</Steps>
+
+<Tip>
+Use detailed logging to capture startup messages for better insight into authentication exchanges.
+</Tip>
+
+## 3. Network and Connectivity Troubleshooting
+
+Connectivity errors often look like "connection refused," timeouts, or inability to reach the PostgreSQL server.
+
+### Common Network Errors
+
+- Connection refused or no route to host errors
+- Network timeouts
+- Inability to open Unix socket files when configured
+
+### Troubleshooting Network Issues
+
+1. **Confirm PostgreSQL Server is Running**
+   - Ensure PostgreSQL is active and listening on the expected TCP port or Unix socket.
+2. **Verify Address and Port**
+   - Validate `Options.Addr` matches the correct host and port.
+   - For Unix sockets, confirm the socket file path exists and permissions allow access.
+3. **Check Firewall Rules**
+   - Make sure no firewall blocks your client from reaching the server port.
+4. **Use Connectivity Testing Tools**
+   - Run `ping`, `telnet`, or `nc` (netcat) commands to verify network reachability.
+
+<Note>
+By default, go-pg uses TCP on port 5432. Override this using the `Network` and `Addr` options if required.
+</Note>
+
+## 4. Connection Pooling and Resource Limits
+
+Sometimes connection problems arise because the server refuses new connections due to resource exhaustion or connection limits.
+
+### Common Symptoms
+
+- Errors indicating too many connections
+- Timeout waiting for a free connection in the pool
+
+### Recommended Actions
+
+- Adjust `PoolSize` and `MinIdleConns` in the go-pg Options to align with your server capacity.
+- Monitor PostgreSQL's active connections.
+- Configure `PoolTimeout` to an appropriate duration (default: 30 seconds).
+
+## 5. Using Error Messages to Diagnose Problems
+
+go-pg surfaces PostgreSQL error details using the `Error` interface. Key fields provide useful information:
+
+| Field | Meaning                             | Typical Usage                        |
+|-------|-----------------------------------|------------------------------------|
+| 'C'   | SQLSTATE error code                | Identify error class                |
+| 'M'   | Error message                     | User-friendly description          |
+| 'V'   | Severity (e.g. FATAL, PANIC)       | Indicates critical errors           |
+
+### Examples
+
+- `Error.Field('C') == 28P01` indicates an authentication failure.
+- Severity `FATAL` suggests connection termination.
+
+
+## 6. Step-by-Step Troubleshooting Workflow
+
+Follow these steps to systematically diagnose connection problems:
+
+<Steps>
+<Step title="Step 1: Enable Detailed Logging">
+Configure your application with verbose logging to capture connection error messages.
+</Step>
+<Step title="Step 2: Test Basic Connectivity">
+Use external tools like `psql` or `telnet` to test reaching your PostgreSQL instance.
+</Step>
+<Step title="Step 3: Verify go-pg Options">
+Ensure all relevant connection parameters (`User`, `Password`, `Database`, `Network`, `Addr`, `TLSConfig`) are correctly set.
+</Step>
+<Step title="Step 4: Examine Error Messages and Codes">
+Read PostgreSQL's error codes and messages returned by go-pg to pinpoint the failure.
+</Step>
+<Step title="Step 5: Adjust Server Configuration if Needed">
+Review PostgreSQL's `pg_hba.conf`, connection limits, and TLS setup.
+</Step>
+<Step title="Step 6: Restart and Re-test">
+Restart PostgreSQL and your app after configuration changes to validate fixes.
+</Step>
+</Steps>
+
+<Tip>
+Remember that TLS settings in go-pg (`TLSConfig`) must match the PostgreSQL server’s SSL requirements to avoid "SSL not enabled" errors.
+</Tip>
+
+## 7. Example: Diagnosing an Authentication Error
+
+Imagine you receive an error:
+
+```
+pg: password authentication failed for user "app_user"
+```
+
+### Resolution Steps
+
+1. Confirm the password configured in your `Options` matches the user’s PostgreSQL password.
+2. Ensure `pg_hba.conf` allows `app_user` to connect using password authentication from your client host.
+3. Restart PostgreSQL if you modify authentication settings.
+4. Retry the connection with corrected credentials.
+
+## 8. Example: Solving Network Connectivity Problems
+
+Error:
+
+```
+dial tcp 127.0.0.1:5432: connect: connection refused
+```
+
+### What To Do
+
+1. Verify the PostgreSQL server is running (`systemctl status postgresql` or equivalent).
+2. Confirm PostgreSQL listens on 127.0.0.1:5432 by checking `postgresql.conf`.
+3. Use `netstat -plant | grep 5432` or similar to confirm binding.
+4. Check firewall rules that may block port 5432.
+5. Confirm your application uses correct `Network` and `Addr` settings.
+
+## 9. Debugging Tools Built Into go-pg
+
+While go-pg does not expose detailed connection negotiation logs in the public API, you can trace errors through returned error values, wrapped PostgreSQL error types, and pool state statistics.
+
+### Pool and Connection Diagnostics
+
+- Use `db.PoolStats()` to inspect the health and usage of connections.
+- Reconnect issues can be identified by errors returned from `db.Exec()` or `db.Query()` operations.
+
+## 10. Common Pitfalls and How to Avoid Them
+
+<AccordionGroup title="Common Pitfalls and Fixes">
+<Accordion title="Incorrect Version Suffix in Import">
+Importing `github.com/go-pg/pg` without the `/v10` suffix causes compatibility errors. Always import `github.com/go-pg/pg/v10`.
+</Accordion>
+<Accordion title="Mismatched TLS Settings">
+Ensure the TLS configuration (or disabling it) on the client matches the PostgreSQL server’s SSL setup. Mismatches result in connection failures.
+</Accordion>
+<Accordion title="Exhausted Connection Pool">
+Configure an appropriate `PoolSize` and avoid exhausting connections with concurrent long-running queries.
+</Accordion>
+<Accordion title="Bad Credentials Handling">
+Update credentials carefully. Remember the server logs and go-pg errors will indicate authentication issues.
+</Accordion>
+<Accordion title="Network Misconfiguration">
+Verify that your client host can reach the PostgreSQL server on the expected address and port.
+</Accordion>
+</AccordionGroup>
+
+## 11. Further Help and References
+
+- Review the [Connecting to PostgreSQL guide](/getting-started/basic-usage/initial-connection) for setup details.
+- Consult PostgreSQL documentation on [pg_hba.conf](https://www.postgresql.org/docs/current/auth-pg-hba-conf.html) and authentication methods.
+- Use the [Error Handling & Status Codes](/api-reference/common-operations-examples/error-handling-status-codes) documentation for interpreting errors.
+
+
+---
+
+By following this guide, you can systematically diagnose and resolve connection problems with go-pg, restoring reliable database access and improving your application's stability.

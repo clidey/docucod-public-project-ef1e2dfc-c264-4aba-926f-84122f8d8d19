@@ -1,0 +1,301 @@
+---
+title: "Installation and First Connection"
+description: "Learn how to install go-pg, configure your Go project with modules, and establish your first connection to a PostgreSQL database. This foundational guide also touches on common connection options and troubleshooting basic connection issues."
+---
+
+# Installation and First Connection
+
+Welcome to the foundational guide for getting started with **go-pg**, a powerful PostgreSQL client and ORM for Go. Here, you will learn how to set up your Go environment with modules, install go-pg v10, and establish your very first connection to a PostgreSQL database. This guide ensures a smooth and confident start by walking through practical steps for installation, setup, and connection verification.
+
+---
+
+## 1. Overview of This Guide
+
+This guide helps you:
+- Install go-pg v10 in your Go project using Go modules.
+- Configure connection options for PostgreSQL.
+- Establish a successful initial connection to your PostgreSQL database.
+- Troubleshoot common connection problems.
+
+### Prerequisites
+- Go 1.16 or later installed and configured on your system.
+- Access to a running PostgreSQL server (version 9.6 or newer recommended).
+- Basic familiarity with Go modules and environment variables.
+
+### Expected Outcome
+By following this guide, you will have go-pg installed as a module dependency in your project and be able to connect successfully to your PostgreSQL database, verifying connectivity with a simple SQL query.
+
+### Time Estimate
+About 10-20 minutes, depending on your environment setup.
+
+### Difficulty Level
+Beginner to Intermediate
+
+---
+
+## 2. Installing go-pg
+
+### Step 1: Initialize Your Go Module (If Needed)
+If your project does not already use Go modules, start by initializing it:
+
+```bash
+mkdir your-project && cd your-project
+go mod init your-project
+```
+
+### Step 2: Add go-pg v10 as a Dependency
+Use the following command to add go-pg v10 to your project:
+
+```bash
+go get github.com/go-pg/pg/v10
+```
+
+This ensures you're using the correct major version with the `/v10` suffix, which is crucial for compatibility.
+
+### Step 3: Verify the Installation
+Confirm the module is correctly added to your `go.mod` file:
+
+```bash
+cat go.mod | grep go-pg
+```
+It should show a line similar to:
+
+```
+github.com/go-pg/pg/v10 v10.x.x
+```
+
+<Tip>
+Ensure the `/v10` suffix is included in imports; otherwise, you will face import errors.
+</Tip>
+
+---
+
+## 3. Configuring Connection Options
+
+To connect to PostgreSQL, prepare the connection options that specify how go-pg communicates with your database.
+
+### Basic Options
+The essential fields to configure in `pg.Options` are:
+
+| Option          | Description                              | Default Value            |
+|-----------------|------------------------------------------|-------------------------|
+| `User`          | Database username                        | `postgres` (env `PGUSER`) |
+| `Password`      | Database password                        | `postgres` (env `PGPASSWORD`) |
+| `Database`      | Target database name                     | `postgres` (env `PGDATABASE`) |
+| `Addr`          | Host and port for TCP connection        | `localhost:5432` (env `PGHOST` and `PGPORT`) |
+| `Network`       | Network type (`tcp` or `unix`)           | `tcp`                   |
+| `TLSConfig`     | TLS config for secure connections       | `InsecureSkipVerify` as default (allow SSL) |
+
+The client automatically reads environment variables if options are not specified explicitly.
+
+### Using a Connection URL
+Alternatively, you can parse a PostgreSQL connection URL using `pg.ParseURL()`. The URL must follow this format:
+
+```
+postgres://username:password@host:port/databasename?sslmode=disable&application_name=myapp&connect_timeout=5
+```
+
+Supported `sslmode` values include `disable`, `allow`, `prefer`, `require`, `verify-ca`, and `verify-full`.
+
+Example in code:
+
+```go
+options, err := pg.ParseURL("postgres://postgres:mypassword@localhost:5432/mydb?sslmode=disable")
+if err != nil {
+    panic(err)
+}
+db := pg.Connect(options)
+```
+
+---
+
+## 4. Establishing Your First Connection
+
+### Step 1: Import go-pg in Your Go Code
+
+```go
+import "github.com/go-pg/pg/v10"
+```
+
+### Step 2: Create Connection Options
+You can configure options manually or use environment defaults:
+
+```go
+options := &pg.Options{
+    User:     "postgres",
+    Password: "postgres",
+    Database: "postgres",
+    Addr:     "localhost:5432",
+}
+
+// Or parse connection URL
+// options, err := pg.ParseURL("postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+```
+
+### Step 3: Connect to PostgreSQL
+
+```go
+db := pg.Connect(options)
+// Always close the connection when no longer needed
+// defer db.Close()
+```
+
+### Step 4: Verify the Connection
+Run a simple query to confirm connectivity:
+
+```go
+var n int
+_, err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+if err != nil {
+    panic(err) // Handle connection error gracefully
+}
+fmt.Println("Connected successfully, test query result:", n)
+```
+
+Expected output:
+
+```
+Connected successfully, test query result: 1
+```
+
+### Step 5: Use Connection Pooling Defaults
+By default, go-pg uses an efficient connection pool sized based on your CPU cores. You can customize via `PoolSize` and other fields in `pg.Options` if needed.
+
+---
+
+## 5. Common Connection Options Detailed
+
+| Option               | Description                                                   | Default / Notes                      |
+|----------------------|---------------------------------------------------------------|------------------------------------|
+| `DialTimeout`        | Timeout for establishing new TCP connection                   | 5 seconds                         |
+| `ReadTimeout`        | Timeout for socket reads; aborts long-running commands        | 0 = no timeout                    |
+| `WriteTimeout`       | Timeout for socket writes                                      | 0 = no timeout                    |
+| `MaxRetries`         | How many times to retry failed queries                        | 0 (no retries by default)        |
+| `RetryStatementTimeout` | Retry queries cancelled due to statement timeout            | false                           |
+| `MinIdleConns`       | Minimum idle connections to create for faster acquisition     | 0                                |
+| `MaxConnAge`         | Maximum age after which connection is closed and recreated    | 0 (no max age)                   |
+| `PoolTimeout`        | Timeout waiting for free connection if pool exhausted         | 30s or `ReadTimeout + 1s`         |
+| `IdleTimeout`        | Idle connection timeout to reclaim stale connections          | 5 minutes                        |
+| `ApplicationName`    | Application name sent to PostgreSQL servers for logging      | Optional                        |
+
+<Tip>
+Use the environment variables `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, and `PGDATABASE` to simplify your configuration.
+</Tip>
+
+---
+
+## 6. Troubleshooting Your First Connection
+
+Following are common problems you may encounter and how to address them.
+
+### Problem 1: Authentication Failure
+- Check your username and password.
+- Verify `pg_hba.conf` on your PostgreSQL server allows connections from your host for your user.
+
+### Problem 2: Connection Timeout or Refused
+- Ensure PostgreSQL server is running and accessible on the specified host and port.
+- Confirm network connectivity, firewall settings, and that `listen_addresses` in Postgres config include your connection host.
+
+### Problem 3: SSL/TLS Issues
+- Match the `sslmode` option with your server's SSL configuration.
+- Use `sslmode=disable` for unsecured local connections.
+- For production environments, prefer `verify-full` with proper CA certificates for security.
+
+### Problem 4: Pool Exhaustion Errors
+- Increase `PoolSize` in options if your workload requires concurrent connections.
+- Monitor connection usage and consider `MinIdleConns` to keep idle connections warmed up.
+
+<Tip>
+Refer to the [Connection Errors Troubleshooting Guide](/getting-started/troubleshooting/connection-errors) for detailed diagnostics of connection issues.
+</Tip>
+
+---
+
+## 7. Example: Complete Minimal Connection Program
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/go-pg/pg/v10"
+)
+
+func main() {
+	// Connect using default environment variables and options
+	db := pg.Connect(&pg.Options{
+		User:     "postgres",
+		Password: "postgres",
+		Database: "postgres",
+		Addr:     "localhost:5432",
+	})
+	defer db.Close()
+
+	var n int
+	_, err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Successful connection, test result:", n)
+}
+```
+
+---
+
+## 8. Best Practices for First Connections
+
+- Use environment variables for sensitive credentials, avoiding hardcoding passwords.
+- Always defer `db.Close()` to cleanly close connections when done.
+- For local development, keep `sslmode=disable` or `allow`.
+- Adjust pool sizes (`PoolSize` and `MinIdleConns`) based on your application’s concurrency needs.
+- Use `connect_timeout` in connection URLs/options to fail fast on unreachable database.
+
+---
+
+## 9. Next Steps
+
+After establishing the connection:
+- Learn to define your database models using Go structs.
+- Practice performing basic CRUD operations.
+- Explore transactions and advanced query patterns.
+- Deep dive into connection pooling and performance tuning.
+
+Related documentation to visit next:
+- [Basic Usage: Initial Connection to PostgreSQL](/getting-started/basic-usage/initial-connection)
+- [Defining Your First Model](/getting-started/basic-usage/first-model)
+- [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling)
+
+
+---
+
+## 10. Additional Resources
+
+- Official GitHub repo: [https://github.com/go-pg/pg](https://github.com/go-pg/pg)
+- PostgreSQL pg_hba.conf documentation: [https://www.postgresql.org/docs/current/auth-pg-hba-conf.html](https://www.postgresql.org/docs/current/auth-pg-hba-conf.html)
+- Troubleshooting Installation Issues: [/getting-started/troubleshooting/installation-errors](../troubleshooting/installation-errors)
+- Troubleshooting Connection Errors: [/getting-started/troubleshooting/connection-errors](../troubleshooting/connection-errors)
+
+<Tip>
+Remember to consult the Architecture Overview and Core Concepts pages to gain a deeper understanding of go-pg’s design and how connections are managed under the hood.
+</Tip>
+
+---
+
+## 11. Diagram: Workflow from Installation to First Connection
+
+```mermaid
+flowchart TD
+    A[Start: New Go Project] --> B[Initialize Go Modules]
+    B --> C[Add go-pg v10 Dependency]
+    C --> D[Configure Connection Options]
+    D --> E[Create pg.DB Connection]
+    E --> F[Run Verification Query (SELECT 1)]
+
+    F -->|Success| G[Connection Established]
+    F -->|Failure| H[Troubleshoot Connection Issues]
+    H --> D
+```
+
+This flow ensures you proceed step-by-step from setting up your project through to validating a live connection.

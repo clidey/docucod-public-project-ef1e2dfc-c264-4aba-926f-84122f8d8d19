@@ -1,0 +1,274 @@
+---
+title: "Supported Data Types & Type Mapping"
+description: "Reference for all Go and PostgreSQL data types supported by go-pg. Includes mappings, encoding/decoding rules, and links to type-specific helpers such as NullTime, arrays, and custom type handling."
+---
+
+# Supported Data Types & Type Mapping
+
+This reference page covers all Go and PostgreSQL data types supported by **go-pg**. It details how the ORM maps PostgreSQL data types to Go types, how encoding and decoding of these types is handled, and points you to important type-specific helpers. This guide will empower you to work confidently with various data representations in your PostgreSQL-backed Go applications.
+
+---
+
+## Introduction
+
+Working with PostgreSQL through go-pg involves seamless handling of many native PostgreSQL types in Go, including core scalar types, arrays, JSON, and nullable types. This page consolidates the mappings and explains key details around encoding and decoding, helping you align the database schema with your Go structs.
+
+Whether you are modeling simple numeric fields or complex JSONB columns, this guide helps you understand what Go types to use and how go-pg processes them internally.
+
+---
+
+## Supported PostgreSQL Data Types and Their Go Mappings
+
+The following PostgreSQL types are natively supported, with their corresponding Go types and specific notes on usage:
+
+| PostgreSQL Type            | Go Type(s)                      | Description                               |
+|---------------------------|--------------------------------|-------------------------------------------|
+| **Timestamp Types**       | `time.Time`                    | For `timestamp without time zone` and `timestamptz` (timestamp with time zone) |
+| **Date / Time**            | `time.Time` (date/time portion) | Supports `date`, `time without time zone`, `time with time zone`, and `interval` |
+| **Boolean**                | `bool`                        | Standard boolean type                   |
+| **Integer Types**          | `int16` (`smallint`), `int32` (`integer`), `int64` (`bigint`) | Signed integers of various sizes          |
+| **Serial Types**           | Same as integers but auto-incrementing | Includes `smallserial`, `serial`, `bigserial` |
+| **Floating Point Types**   | `float32` (`real`), `float64` (`double precision`) | Floating point numbers with specified precision |
+| **Character Types**        | `string`                      | `varchar(n)`, `char(n)`, and `text` (variable and fixed length strings) |
+| **JSON Types**             | `string` or `[]byte` (raw), or custom JSON marshalling types | Both text (`json`) and binary (`jsonb`) JSON types supported |
+| **Binary Data (bytea)**    | `[]byte`                      | Raw binary data                       |
+| **Network Addresses**      | `net.IP`, `net.IPNet`, and similar | For `inet`, `cidr`, and `macaddr` types      |
+
+
+These types correspond to the following constants internally used by go-pg:
+
+```go
+const (
+	pgTypeTimestamp   = "timestamp"
+	pgTypeTimestampTz = "timestamptz"
+	pgTypeDate        = "date"
+	pgTypeTime        = "time"
+	pgTypeTimeTz      = "time with time zone"
+	pgTypeInterval    = "interval"
+	
+	pgTypeInet    = "inet"
+	pgTypeCidr    = "cidr"
+	pgTypeMacaddr = "macaddr"
+	
+	pgTypeBoolean = "boolean"
+
+	pgTypeReal            = "real"
+	pgTypeDoublePrecision = "double precision"
+
+	pgTypeSmallint = "smallint"
+	pgTypeInteger  = "integer"
+	pgTypeBigint   = "bigint"
+
+	pgTypeSmallserial = "smallserial"
+	pgTypeSerial      = "serial"
+	pgTypeBigserial   = "bigserial"
+
+	pgTypeVarchar = "varchar"
+	pgTypeChar    = "char"
+	pgTypeText    = "text"
+
+	pgTypeJSON  = "json"
+	pgTypeJSONB = "jsonb"
+
+	pgTypeBytea = "bytea"
+)
+```
+
+---
+
+## Encoding & Decoding Rules
+
+**go-pg** automatically handles encoding your Go struct fields into compatible PostgreSQL formats and decoding PostgreSQL results back into Go values. Here are the highlights:
+
+- **Null Handling:**
+  - By default, zero value Go fields (e.g., empty string, zero int, nil pointer) are encoded as `NULL` in PostgreSQL unless you use specific types that define nullability handling (like `NullTime`).
+  - The `UseZeroFlag` can be set for fields which should treat zero-value as a valid database value instead of null.
+
+- **Arrays:**
+  - PostgreSQL arrays are mapped transparently to Go slices and arrays.
+  - The encoding is compliant with PostgreSQL's array literal format, including quoting elements where necessary.
+  - Built-in support exists for common slice types like `[]string`, `[]int`, `[]int64`, and `[]float64`.
+
+- **JSON/JSONB:**
+  - You can map `json` or `jsonb` columns to Go types that implement `json.Marshaler` and `json.Unmarshaler` interfaces.
+  - For raw JSON handling, `[]byte` or `string` types may be used directly.
+
+- **Custom Types:**
+  - To support custom PostgreSQL types or extensions (e.g., composite types), implement `AppenderFunc` and `ScannerFunc` to customize encoding and decoding logic.
+
+- **Time Zones:**
+  - For timestamp with time zone (`timestamptz`), Go's `time.Time` stores values in UTC with time zone information maintained.
+  - Use `time.Time` for all date/time related fields for consistent behavior.
+
+---
+
+## Working with Arrays
+
+Arrays require special handling both when encoding to queries and when scanning results.
+
+The internal `ArrayAppender` function dynamically generates the encoder for slice or array types. It handles quoting and nesting automatically.
+
+Example Go slice types supported out of the box:
+
+- `[]string`
+- `[]int`
+- `[]int64`
+- `[]float64`
+
+### Example: Encoding a String Array
+
+```go
+type Model struct {
+  Tags []string
+}
+
+// go-pg will encode Tags field as PostgreSQL array literal '{tag1,tag2,tag3}'
+
+model := &Model{Tags: []string{"go", "pg", "postgres"}}
+// After marshaling, Tags is sent as '{go,pg,postgres}' to your DB
+```
+
+### Example: Nil or Empty Arrays
+
+- A nil slice encoded will be sent as SQL NULL.
+- An empty slice will be encoded as '{}' (empty array).
+
+---
+
+## Null Types and Helpers
+
+go-pg offers helpers that allow working with nullable PostgreSQL types explicitly. For example:
+
+- `NullTime` for nullable timestamps
+- `NullString` for nullable strings (if you implement it yourself or via external helpers)
+
+### Using `NullTime`
+
+```go
+import "github.com/go-pg/pg/v10/types"
+
+type Model struct {
+    CreatedAt types.NullTime
+}
+
+// NullTime stores time.Time with explicit valid flag indicating presence or null
+```
+
+Use these types when you want to clearly distinguish database NULL from zero values in Go.
+
+---
+
+## Custom Type Handling
+
+For advanced use cases involving PostgreSQL composite types, domains, or custom enums, implement the `AppenderFunc` and `ScannerFunc` interfaces to control how your Go structs encode to and decode from PostgreSQL.
+
+You may override the default behavior by assigning these functions to fields during model or ORM setup.
+
+---
+
+## Summary Table of Common Type Mappings
+
+| PostgreSQL Type     | Go Type                  | Notes                                           |
+|--------------------|--------------------------|-------------------------------------------------|
+| `smallint`         | `int16`                  | 2 bytes signed integer                           |
+| `integer`          | `int32` or `int`         | 4 bytes signed integer                           |
+| `bigint`           | `int64`                  | 8 bytes signed integer                           |
+| `smallserial`      | `int16`                  | Auto-incrementing smallint                       |
+| `serial`           | `int32` or `int`         | Auto-incrementing integer                        |
+| `bigserial`        | `int64`                  | Auto-incrementing bigint                         |
+| `real`             | `float32`                | 4 byte floating point                            |
+| `double precision` | `float64`                | 8 byte floating point                            |
+| `boolean`          | `bool`                   | Boolean value                                   |
+| `varchar(n), text` | `string`                 | Variable or unlimited length string              |
+| `bytea`            | `[]byte`                 | Binary data                                     |
+| `json`, `jsonb`    | `[]byte`, `string`, or struct implementing json interfaces | JSON, binary JSON support                     |
+| `timestamp`        | `time.Time`              | Without timezone                                |
+| `timestamptz`      | `time.Time`              | With timezone                                   |
+| `date`             | `time.Time`              | Date only (time is zeroed)                       |
+| `inet`, `cidr`     | `net.IP`, `net.IPNet`/`*net.IPNet` | IP addresses and networks                      |
+| `macaddr`          | `net.HardwareAddr`       | MAC addresses                                   |
+
+---
+
+## Practical Examples
+
+### Defining a Model With Various Field Types
+
+```go
+import (
+    "time"
+    "github.com/go-pg/pg/v10/types"
+)
+
+type User struct {
+    ID        int64      `pg:",pk"`
+    Name      string
+    Email     string
+    CreatedAt time.Time
+    UpdatedAt types.NullTime
+    Tags      []string
+    Preferences map[string]interface{} // stored in jsonb column
+}
+```
+
+In this example:
+- `CreatedAt` maps to a PostgreSQL timestamp or timestamptz
+- `UpdatedAt` uses nullable time handling
+- `Tags` is a string array
+- `Preferences` can be marshaled/unmarshaled JSON fields
+
+### Querying and Receiving Results
+
+go-pg automatically decodes array and null types:
+
+```go
+var user User
+err := db.Model(&user).Where("id = ?", 1).Select()
+if err != nil {
+    return err
+}
+// user.Tags is a populated []string slice or nil
+// user.UpdatedAt.Valid indicates if UpdatedAt was NULL
+```
+
+---
+
+## Troubleshooting & Tips
+
+- **Empty slices vs. Null:** Ensure you differentiate between nil slices (NULL) and empty slices (`{}`), especially on insert/update.
+- **Custom types:** For non-standard PG types, implement custom `AppenderFunc`/`ScannerFunc`.
+- **Timezones:** Always use `time.Time` for date/time fields; be cautious with timezone handling in your database schema.
+- **Arrays of complex types:** Only basic slices (`[]string`, `[]int`, etc.) are supported natively. For complex types, serialize manually (e.g., JSON).
+
+---
+
+## Related Helpers and Extensions
+
+- **`NullTime` Helper:** Use to handle nullable timestamps cleanly.
+- **Array appender functions:** Internal mechanisms handle array marshaling transparently.
+- **Custom JSON Marshalers:** Implement `MarshalJSON`/`UnmarshalJSON` for structs to map JSONB columns.
+
+These help you precisely control how types are encoded/decoded, improving correctness and flexibility.
+
+---
+
+## Further Reading
+- [Core Concepts & Terminology](/overview/architecture-and-core-concepts/core-concepts-and-terminology) for foundational ideas.
+- [Working with Associations & Custom Types](/guides/advanced-orm-patterns/custom-types-arrays-hstore) for advanced type handling.
+- [Creating Tables & Basic CRUD](/getting-started/basic-usage/schema-and-crud) for schema management related to field types.
+
+---
+
+## Summary
+Understanding type mappings and data encoding is crucial to harnessing go-pg's full power. This reference guides you through all supported PostgreSQL types and their Go counterparts, describing encoding rules and helper types to maintain data integrity seamlessly. Use this as your go-to source to align your Go structs effectively with PostgreSQL schemas.
+
+
+---
+
+## References
+- go-pg GitHub Repository: [https://github.com/go-pg/pg](https://github.com/go-pg/pg)
+- PostgreSQL Types in go-pg source (orm/types.go)
+- Array Encoding (types/array_append.go)
+
+
+

@@ -1,0 +1,309 @@
+---
+title: "Custom PostgreSQL Types: Arrays, Hstore, Composite Types"
+description: "Explore how to use and map PostgreSQL-specific types such as arrays, hstore, and user-defined composite types with go-pg structs, including best practices for marshaling, querying, and schema management."
+---
+
+# Custom PostgreSQL Types: Arrays, Hstore, Composite Types
+
+Explore how to use and map PostgreSQL-specific types such as arrays, hstore, and user-defined composite types with go-pg structs, including best practices for marshaling, querying, and schema management.
+
+---
+
+## Workflow Overview
+
+### Task Description
+This guide walks you through leveraging go-pg’s support for PostgreSQL's specialized types: arrays, hstore key-value stores, and composite types. You will learn how to map these complex database types to Go structs, perform seamless marshaling and unmarshaling, and effectively query and manage schemas involving these types.
+
+### Prerequisites
+- Basic familiarity with Go struct definitions and tags.
+- PostgreSQL database (version 9.6+) with array and hstore extensions enabled.
+- A working go-pg v10 setup connected to your PostgreSQL instance.
+
+### Expected Outcomes
+- Understand how to define Go structs that map to PostgreSQL arrays, hstore columns, and composite types.
+- Perform CRUD operations using go-pg with these types transparently handled.
+- Utilize best practices for marshaling, scanning, and appending values in your applications.
+
+### Time Estimate
+Approximately 20–30 minutes to read through and experiment with the examples.
+
+### Difficulty Level
+Intermediate (requires knowledge of PostgreSQL types and struct mapping in Go)
+
+---
+
+## Step-by-Step Instructions
+
+### 1. Working with PostgreSQL Arrays
+
+PostgreSQL arrays (e.g., `integer[]`, `text[]`) can be naturally mapped to Go slices using go-pg.
+
+- **Defining Your Struct:**
+
+```go
+// Example model with integer and string arrays
+type Product struct {
+    ID       int64    
+    Tags     []string // maps to text[]
+    Scores   []int    // maps to integer[]
+}
+```
+- **Marshaling and Scanning**
+
+  go-pg uses internal array parsers that scan and marshal these slices transparently. Supported element types include strings, integers (int, int64), and floats.
+
+- **Querying Arrays**
+
+  Arrays are queried like normal fields:
+
+```go
+var products []Product
+err := db.Model(&products).Where(`? = ANY(tags)`, "electronics").Select()
+```
+
+This queries products where 'electronics' is present in the `tags` array.
+
+- **Best Practices**
+  - Use Go slices (`[]string`, `[]int`, etc.) for array columns.
+  - Avoid pointer slices for arrays; go-pg expects direct slice types.
+  - Ensure the PostgreSQL column type matches the Go slice element type.
+
+### 2. Using PostgreSQL Hstore
+
+PostgreSQL `hstore` is a key–value store type that maps to Go `map[string]string` fields with special handling.
+
+- **Defining Structs with hstore:**
+
+```go
+import "github.com/go-pg/pg/v10"
+
+type Item struct {
+    Id    int64
+    Attrs map[string]string `pg:",hstore"` // Marks as hstore type
+}
+```
+
+- **Schema Setup:**
+
+```sql
+CREATE TABLE items (
+    id serial PRIMARY KEY,
+    attrs hstore
+);
+```
+
+- **Inserting & Selecting Hstore Data:**
+
+```go
+item := Item{
+    Id:    1,
+    Attrs: map[string]string{"color": "red", "size": "large"},
+}
+_, err := db.Model(&item).Insert()
+
+var readItem Item
+err = db.Model(&readItem).Where("id = ?", 1).Select()
+fmt.Println(readItem.Attrs) // map[color:red size:large]
+```
+
+- **Using `pg.Hstore` Helper:**
+
+  For working with hstore outside structs, use `pg.Hstore` to marshal/unmarshal explicitly.
+
+```go
+var dst map[string]string
+_, err := db.QueryOne(pg.Scan(pg.Hstore(&dst)), `SELECT ?`, pg.Hstore(src))
+```
+
+- **Tips:**
+  - Always add the struct tag `pg:",hstore"` for map fields backed by hstore columns.
+  - go-pg handles quoting and escaping internally.
+  - Validate that the `hstore` extension is enabled in your PostgreSQL database.
+
+### 3. Handling User-Defined Composite Types
+
+PostgreSQL composite types allow grouping several fields into one column.
+
+- **Mapping Composite Types to Go Structs:**
+
+  Define a Go struct that matches the PostgreSQL composite structure.
+
+```go
+type Address struct {
+    Street string
+    City   string
+    Zip    string
+}
+
+type User struct {
+    Id      int64
+    Address Address `pg:",type:address"`
+}
+```
+
+- **Schema Setup:**
+
+```sql
+CREATE TYPE address AS (
+    street text,
+    city text,
+    zip text
+);
+
+CREATE TABLE users (
+    id serial PRIMARY KEY,
+    address address
+);
+```
+
+- **Inserting Composite Types:**
+
+```go
+user := User{
+    Id: 1,
+    Address: Address{
+        Street: "123 Main St",
+        City: "Anytown",
+        Zip: "12345",
+    },
+}
+_, err := db.Model(&user).Insert()
+```
+
+- **Querying Composite Types:**
+
+```go
+var user User
+err := db.Model(&user).Where("id = ?", 1).Select()
+fmt.Println(user.Address.City)
+```
+
+- **Best Practices:**
+  - Use the struct tag `pg:",type:your_composite_type"`.
+  - Ensure Go struct fields match order and types of composite type fields exactly.
+  - Use pointer fields in Go structs if composite fields can be nullable.
+
+### 4. Marshaling and Scanning Mechanics
+
+- go-pg uses **AppenderFunc** for writing values to SQL queries and **ScannerFunc** for reading from results.
+- Specialized functions exist for arrays (in `types/array_scan.go`) and hstore (in `types/hstore_scan.go` and `types/hstore_append.go`).
+- You generally do not need to manually call these functions unless you implement custom types.
+
+### 5. Schema Management
+
+- go-pg schema creation supports standard PostgreSQL types.
+- For custom composite types and hstore, ensure the database schema is created before running your application.
+- Use raw SQL migrations or tools compatible with go-pg migrator to setup and manage these types.
+
+---
+
+## Examples & Code Samples
+
+### Example Struct Using Arrays and Hstore
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+)
+
+type Item struct {
+    Id    int64
+    Tags  []string            `pg:",array"`
+    Attrs map[string]string   `pg:",hstore"`
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User: "postgres",
+        Addr: ":5432",
+        Password: "secret",
+        Database: "mydb",
+    })
+    defer db.Close()
+
+    // Insert item
+    item := Item{
+        Id:   1,
+        Tags: []string{"go", "pg", "postgres"},
+        Attrs: map[string]string{
+            "color": "blue",
+            "size":  "medium",
+        },
+    }
+
+    _, err := db.Model(&item).Insert()
+    if err != nil {
+        panic(err)
+    }
+
+    // Query item
+    var readItem Item
+    err = db.Model(&readItem).Where("id = ?", 1).Select()
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("Item: %#v\n", readItem)
+}
+```
+
+### Example: Using Hstore Directly
+
+```go
+var dst map[string]string
+src := map[string]string{"key1": "value1", "key2": "value2"}
+_, err := db.QueryOne(pg.Scan(pg.Hstore(&dst)), `SELECT ?`, pg.Hstore(src))
+if err != nil {
+    panic(err)
+}
+fmt.Println(dst) // Outputs: map[key1:value1 key2:value2]
+```
+
+---
+
+## Troubleshooting & Tips
+
+### Common Issues
+- **Nil Maps or Arrays**
+  - Ensure Go slices or maps are initialized (`nil` can be scanned as `nil` but inserting uninitialized maps might fail).
+
+- **Unsupported Types Errors**
+  - Errors like `pg.Hstore(unsupported <type>)` indicate your struct field’s Go type does not match the expected type.
+  - Verify your map is `map[string]string` (not `map[string]interface{}` or other).
+
+- **Schema Mismatches**
+  - Composite types must match exactly in field order and types between Go struct and PostgreSQL.
+
+- **Extension Not Installed**
+  - `hstore` requires the PostgreSQL extension:
+
+  ```sql
+  CREATE EXTENSION IF NOT EXISTS hstore;
+  ```
+
+### Best Practices
+- Use explicit struct tags for `hstore` and array fields.
+- Use the right Go types (e.g., `[]string` for text arrays, `map[string]string` for hstore).
+- Test marshaling/unmarshaling independently when integrating new types.
+- For complex composite types, consider adding custom `ValueScanner` and `ValueAppender` if needed.
+
+### Performance Considerations
+- go-pg’s native support avoids extra serialization overhead for these PostgreSQL types.
+- But for extremely large arrays or maps, monitor query performance and consider batch processing.
+
+### Alternative Approaches
+- For JSONB columns requiring flexible schemas, go-pg supports mapping to `json.RawMessage` or struct embedding.
+- For more complex composite types, consider implementing custom `ValueScanner` and `ValueAppender` interfaces.
+
+---
+
+## Next Steps & Related Content
+
+- Explore working with JSONB and JSON types for flexible schemaless data ([Supported Data Types & Type Mapping](https://pkg.go.dev/github.com/go-pg/pg/v10#section-type-mapping)).
+- Deep dive into schema management for PostgreSQL in go-pg ([Schema and Table Management](https://pkg.go.dev/github.com/go-pg/pg/v10#section-schema-management)).
+- Learn how to optimize performance with connection pooling and prepared statements ([Connection Pooling and Performance Tuning](https://pkg.go.dev/github.com/go-pg/pg/v10#section-performance-pooling)).
+
+---
