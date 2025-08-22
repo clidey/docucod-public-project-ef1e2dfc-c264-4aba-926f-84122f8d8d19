@@ -1,0 +1,281 @@
+---
+title: "Query Formatting & Parameterization"
+description: "Covers the safe construction of dynamic SQL using formatters, query composition functions, and parameter appending. Highlights prevention of SQL injection."
+---
+
+# Query Formatting & Parameterization
+
+This documentation explains how to safely construct dynamic SQL queries using formatters, query composition functions, and parameter appending techniques provided by go-pg ORM. It highlights best practices to prevent SQL injection and to build complex queries with parameters efficiently.
+
+---
+
+## Overview
+
+Dynamic SQL construction is a critical ability when working with databases. go-pg offers a powerful and safe query formatting mechanism that lets you compose SQL queries with parameters in a flexible yet secure manner.
+
+Key concepts covered on this page include:
+
+- Using `Formatter` and interfaces for customizing query formatting
+- Safe parameter appending and substitution
+- Building complex conditional expressions
+- Query composition with reusable components
+- Prevention of SQL injection through parameterization
+
+This guide focuses specifically on the internal and exposed APIs around query formatting and parameter handling — essential for advanced query building.
+
+---
+
+## Query Formatting Fundamentals
+
+At the heart of go-pg's safe SQL construction is the **Formatter** type implementing the `QueryFormatter` interface:
+
+```go
+type QueryFormatter interface {
+    FormatQuery(b []byte, query string, params ...interface{}) []byte
+}
+```
+
+The `FormatQuery` method performs query string compilation by replacing placeholders with properly escaped parameters or identifiers. This method ensures:
+
+- Parameters are safely escaped and quoted to eliminate risks of SQL injection.
+- Use of named parameters and positional parameters interchangeably.
+- Support for custom types implementing `QueryAppender` for embedding raw or preformatted SQL components.
+
+The default formatter is created by `orm.NewFormatter()` and used widely in query building.
+
+### Placeholder Syntax
+
+- **?**: Positional parameter placeholder.
+- **?N**: Numeric positional references allowing parameter reuse, e.g., `?0`, `?1`.
+- **?name**: Named parameters, replaced based on a map set in the formatter.
+- Escape with `\?` to produce literal question marks.
+
+### How Parameters Are Appended
+
+Parameters passed to query methods can be:
+
+- Basic types (strings, numbers, bool, time.Time)
+- go-pg special types like `types.Safe` (for preformatted SQL fragments) and `types.Ident` (for identifiers)
+- Structs with custom methods (e.g., to provide method-based parameters)
+- Objects implementing `QueryAppender` for complex query parts
+
+Example placeholder substitution:
+
+```go
+q := "SELECT * FROM users WHERE name = ?0 AND age > ?1"
+params := []interface{}{"John", 30}
+// Result:
+// SELECT * FROM users WHERE name = 'John' AND age > 30
+```
+
+---
+
+## SafeQuery and QueryAppender Interfaces
+
+To compose parts of a query safely, go-pg defines the interface `QueryAppender`:
+
+```go
+type QueryAppender interface {
+    AppendQuery(fmter QueryFormatter, b []byte) ([]byte, error)
+}
+```
+
+The package offers `SafeQueryAppender` to wrap safe raw SQL with parameters:
+
+```go
+func SafeQuery(query string, params ...interface{}) *SafeQueryAppender
+```
+
+This allows combining raw SQL fragments with parameters which will be properly escaped when appended.
+
+Example:
+
+```go
+sq := orm.SafeQuery("id = ?", 123)
+b, err := sq.AppendQuery(orm.NewFormatter(), nil)
+// b contains: id = 123
+```
+
+This feature lets you build complex query components in a modular, safe way, suitable for composing WHERE clauses, JOIN conditions, and more.
+
+---
+
+## Conditional Grouping with condAppender and condGroupAppender
+
+go-pg provides abstractions to build complex conditions with conjunctions `AND`/`OR` safely:
+
+- **condAppender** handles a single condition string with parameters, wrapped in parentheses.
+- **condGroupAppender** combines multiple conditions with a separator (e.g., `AND`, `OR`) and wraps the group in parentheses.
+
+This allows building nested WHERE clauses dynamically, for example:
+
+```go
+cg := &condGroupAppender{
+    sep: " OR ",
+    cond: []queryWithSepAppender{
+        orm.SafeQuery("age > ?", 18),
+        orm.SafeQuery("status = ?", "active"),
+    },
+}
+
+b, _ := cg.AppendQuery(orm.NewFormatter(), nil)
+// Result: (age > 18 OR status = 'active')
+```
+
+This pattern safeguards complex condition logic while parameterizing all values properly.
+
+---
+
+## Formatter Usage: Named Parameters and Models
+
+Beyond formatting standalone queries, the `Formatter` can be extended with context to
+tailor parameter substitution using models or named parameters:
+
+- Use `WithParam(name string, value interface{})` to add named parameters.
+- Use `WithModel(model interface{})` to hook into ORM models which can provide expansion for placeholders like `?TableAlias`, `?Columns`, and model fields.
+
+This enables queries such as:
+
+```go
+f := orm.NewFormatter().WithParam("userId", 123)
+query := f.FormatQuery(nil, "SELECT * FROM users WHERE id = ?userId")
+// Output: SELECT * FROM users WHERE id = 123
+```
+
+The formatter can also handle nested struct fields or model methods dynamically by looking up parameters and model state.
+
+---
+
+## Using Query Methods on Queries
+
+go-pg's `Query` type leverages formatter-based parameterization across its methods such as:
+
+- `Where(condition string, params ...interface{})`
+- `ColumnExpr(expr string, params ...interface{})`
+- `Set(value string, params ...interface{})`
+
+These methods internally use `SafeQuery` and the formatter to safely build queries and append parameters.
+
+### Query Composition Example
+
+```go
+db.Model(&User{}).
+    Where("name = ?", "john").
+    Where("age > ?", 18).
+    Select()
+```
+
+This creates a parameterized query equivalent to:
+
+```sql
+SELECT * FROM users WHERE (name = 'john') AND (age > 18)
+```
+
+without manual string interpolation, ensuring security and correctness.
+
+---
+
+## Best Practices for Safe Query Construction
+
+1. **Always use parameter placeholders (`?`, `?N`, or `?name`) instead of string concatenation.** This protects you from SQL injection and escaping issues.
+
+2. **Use `SafeQuery` and `QueryAppender` interfaces to modularize query parts**, such as conditions and joins, with embedded parameters.
+
+3. **Leverage named parameters for better readability** and reusable queries.
+
+4. **Apply `WithModel` or similar methods on formatters** to enable automatic model field expansion and parameter substitution.
+
+5. **Prefer `types.Safe` and `types.Ident` wrappers when embedding raw SQL or identifiers** only after ensuring sanitization.
+
+6. **Use `WhereGroup`, `WhereOrGroup`, and similar methods on `Query` for complex condition logic**, which will internally use safe parameter appending.
+
+7. **Validate query construction in your tests to verify correct parameterization and escaping**, preventing surprises in runtime.
+
+---
+
+## Common Pitfalls and Troubleshooting
+
+- **Using raw string concatenation for query conditions instead of placeholders** leads to injection vulnerabilities and malformed queries.
+
+- **Improper escaping of identifiers** can cause SQL syntax errors; use `types.Ident` for table and column names.
+
+- **Incorrect parameter indexing or missing parameters** cause runtime errors during query formatting.
+
+- **Embedding complex model fields directly in queries without model context** may fail; always use `WithModel` or parameter maps where appropriate.
+
+- **Escaping literal question marks:** remember to escape as `\?` to include question marks literally.
+
+When troubleshooting, enable logging of generated SQL to inspect parameter substitution and formatting.
+
+---
+
+## Advanced Usage: Struct Methods and Composite Parameters
+
+go-pg supports invoking struct methods dynamically in placeholder expansion, allowing custom formatting of parameters:
+
+```go
+// Given a struct with method MethodParam returning types.Safe:
+q := NewQuery(db, &myStruct).Where("id = ?MethodParam")
+// It will invoke MethodParam and replace the placeholder safely.
+```
+
+Composite return types and interface fields are also supported, automatically handling nested parameterization.
+
+---
+
+## Summary Example
+
+```go
+f := orm.NewFormatter().WithParam("name", "alice")
+query := f.FormatQuery(nil, "SELECT * FROM users WHERE name = ?name AND active = ?", true)
+// Resulting SQL (safe and escaped):
+// SELECT * FROM users WHERE name = 'alice' AND active = true
+```
+
+Using the ORM `Query` builder:
+
+```go
+db.Model(&User{}).Where("name = ?", "alice").Where("active = ?", true).Select()
+```
+
+Behind the scenes, `SafeQueryAppender` and `Formatter` ensure that these are converted into safe, parameterized queries.
+
+---
+
+## See Also
+
+- [Query Interface Examples](/api-reference/core-db-interfaces/query-interface-examples)
+- [Defining and Using Models](/api-reference/orm-model-workflows/defining-and-using-models)
+- [Model Relations and Joins](/api-reference/orm-model-workflows/model-relations-and-joins)
+- [Soft Deletes and Timestamps Guide](/guides/working-with-data/soft-delete-timestamps)
+- [Advanced Queries and Model Relationships Guide](/guides/working-with-data/advanced-queries-relations)
+
+---
+
+## Diagram: Query Formatting Flow
+
+```mermaid
+flowchart TD
+
+  QueryStart["Start: User defines query string with placeholders"] --> FormatQuery["Formatter.FormatQuery called"]
+
+  FormatQuery -->|Scans query for '?'| ProcessPlaceholder["Process each placeholder"]
+
+  ProcessPlaceholder -->|Numeric param (e.g. ?0)| PositionalParam["Append positional param value safely"]
+  ProcessPlaceholder -->|Named param (e.g. ?name)| NamedParam["Lookup named param and append safely"]
+  ProcessPlaceholder -->|No param| InsertLiteral["Insert literal '?' into query"]
+
+  PositionalParam & NamedParam --> AppendParam["Append param with proper quoting and escaping"]
+
+  AppendParam --> FormatQuery
+  InsertLiteral --> FormatQuery
+
+  FormatQuery --> End["Final SQL query with safe parameters"]
+
+  classDef process fill:#f9f,stroke:#333,stroke-width:2px;
+  class ProcessPlaceholder process;
+```
+
+
+---
+
