@@ -1,0 +1,289 @@
+---
+title: "Schema Migrations & Table Creation"
+description: "Documents utilities and workflows for creating, updating, and dropping tables from Go structs. Explains migration safety, temporary tables, and automated schema evolution."
+---
+
+# Schema Migrations & Table Creation
+
+This page documents the utilities and workflows in go-pg for creating, updating, and dropping tables directly from Go structs. You'll learn how to safely evolve your database schema, manage temporary tables, and use automated schema migration features that translate your Go models into PostgreSQL tables — all while maintaining migration safety and integrity.
+
+---
+
+## Overview
+
+go-pg provides powerful ORM-based utilities that let you define your database schema through Go structs and sync these definitions with the PostgreSQL database tables. This means you can create tables, drop tables, or evolve your schema without writing raw SQL for every migration step.
+
+This page focuses specifically on:
+
+- Creating tables from Go structs
+- Dropping tables safely
+- Migration safety and handling temporary tables
+- Enabling foreign key constraints and other database-specific options during creation
+
+By embracing these workflows, you will streamline schema management, reduce human errors, and automate incremental schema evolution.
+
+---
+
+## Table Creation from Go Structs
+
+### Creating Tables with `CreateTable`
+
+`CreateTable` is the core method for creating a PostgreSQL table based on the Go struct’s definition.
+
+```go
+err := db.Model((*YourModel)(nil)).CreateTable(&orm.CreateTableOptions{
+    Temp:          false, // false by default; set true to create temporary tables
+    FKConstraints: true,  // create foreign key constraints for has-one relations
+    IfNotExists:   true,  // skip creation if table already exists
+    Varchar:       255,   // Replace text columns with varchar(255), for example
+})
+
+if err != nil {
+    panic(err)
+}
+```
+
+- **Temporary Tables:** Set `Temp: true` to create temporary tables useful for session-scoped data, such as test or migration staging tables.
+- **Foreign Key Constraints:** Enabling `FKConstraints` helps generate foreign key constraints on `has-one` relations, using tag-based `on_delete`/`on_update` rules.
+- **If Not Exists:** Prevents errors if the table already exists, which is useful in idempotent migrations.
+
+#### How go-pg Maps Structs to Tables
+
+- Each exported struct field becomes a table column.
+- Primary keys, uniqueness, and nullability are inferred from tags and field types.
+- Fields tagged with `pg:"unique"`, `pg:",notnull"`, and others influence column constraints.
+- You can specify custom SQL types in tags for special cases.
+
+### Example: Creating a User Table
+
+```go
+type User struct {
+    Id   int64
+    Name string
+}
+
+err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{
+    IfNotExists: true,
+})
+if err != nil {
+    panic(err)
+}
+```
+
+This creates a basic `users` table with `id` as a primary key and `name` as a text column.
+
+---
+
+## Dropping Tables
+
+To safely remove tables, use `DropTable`:
+
+```go
+err := db.Model((*YourModel)(nil)).DropTable(&orm.DropTableOptions{
+    IfExists: true,    // Only drop if the table exists
+    Cascade:  true,    // Drop dependent objects such as foreign keys, if needed
+})
+if err != nil {
+    panic(err)
+}
+```
+
+This supports safe cleanup in migrations or tests.
+
+---
+
+## Migration Safety & Best Practices
+
+### Migration Libraries
+
+For sophisticated schema migrations, go-pg integrates smoothly with Go migration frameworks such as:
+
+- [go-pg-migrations](https://github.com/robinjoseph08/go-pg-migrations)
+- [vmihailenco/migrations](https://github.com/vmihailenco/migrations)
+
+These provide safe, reversible migration scripts, while allowing usage of `CreateTable` and `DropTable` under the hood.
+
+### Safe Schema Evolution
+
+- Prefer adding columns with defaults or nullable settings to avoid data loss or downtime.
+- Use migrations to rename columns or alter table structure carefully.
+- When dropping tables or columns, ensure dependent application code is updated accordingly.
+- Always test migrations in staging environments before production.
+
+### Handling Temporary Tables
+
+Temporary tables are session-specific and disappear at session end. They're highly useful for:
+
+- Staging data during complex migration steps
+- Testing
+- Running ephemeral report datasets
+
+Create them with `Temp:true` in `CreateTableOptions`:
+
+```go
+err := db.Model((*TempModel)(nil)).CreateTable(&orm.CreateTableOptions{
+    Temp: true,
+})
+```
+
+---
+
+## Table Creation Options Details
+
+| Option          | Description                                                                                       |
+|-----------------|---------------------------------------------------------------------------------------------------|
+| `Temp`          | Creates a temporary table if true.                                                              |
+| `IfNotExists`   | Includes `IF NOT EXISTS` clause to silently skip creation if the table exists.                   |
+| `FKConstraints` | Creates foreign key constraints based on model relations, supports `on_delete` and `on_update`.   |
+| `Varchar`       | Overrides default `text` types to varchar(n) with `n` as the given integer (e.g., 255).          |
+
+---
+
+## Practical Examples
+
+### Example: Create Table with Foreign Keys and Constraints
+
+```go
+type Profile struct {
+    ID      int
+    UserID  int    `pg:"on_delete:CASCADE"`
+    User    *User  `pg:"rel:has-one"`
+    Bio     string
+}
+
+err := db.Model((*Profile)(nil)).CreateTable(&orm.CreateTableOptions{
+    FKConstraints: true,
+    IfNotExists:   true,
+})
+if err != nil {
+    panic(err)
+}
+```
+
+This creates a `profiles` table with a foreign key to `users` that cascades on delete.
+
+### Example: Create Temporary Table
+
+```go
+type TempSessionData struct {
+    ID   int
+    Data string
+}
+
+err := db.Model((*TempSessionData)(nil)).CreateTable(&orm.CreateTableOptions{
+    Temp: true,
+})
+if err != nil {
+    panic(err)
+}
+```
+
+Useful for transient data during session or migration steps.
+
+### Example: Drop Table if Exists
+
+```go
+err := db.Model((*User)(nil)).DropTable(&orm.DropTableOptions{
+    IfExists: true,
+    Cascade:  true,
+})
+if err != nil {
+    panic(err)
+}
+```
+
+Safely removes the `users` table, including dependent foreign keys.
+
+---
+
+## Important Tips & Common Pitfalls
+
+- **Always use `IfNotExists` and `IfExists` in migration scripts** to make migrations idempotent.
+- Foreign key constraints created with `FKConstraints` rely on correct relation tags in your Go structs.
+- Temporary tables exist only for the duration of the connection; do not use them for persistent data.
+- Custom column types must be specified explicitly via struct tags.
+- When using bulk inserts or complex migrations, create tables beforehand to avoid runtime errors.
+
+---
+
+## Reference: Key Methods and Options
+
+| Method                        | Purpose                                      | Options                              |
+|-------------------------------|----------------------------------------------|------------------------------------|
+| `CreateTable(*CreateTableOptions)` | Creates a table from Go struct definition      | `Temp`, `IfNotExists`, `FKConstraints`, `Varchar` |
+| `DropTable(*DropTableOptions)`| Drops the table for a model struct             | `IfExists`, `Cascade`               |
+
+---
+
+## Example Walkthrough: Creating User and Profile Tables
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/orm"
+)
+
+type User struct {
+    Id    int
+    Name  string
+}
+
+type Profile struct {
+    Id     int
+    UserId int    `pg:"on_delete:CASCADE"`
+    User   *User  `pg:"rel:has-one"`
+    Bio    string
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        User: "postgres",
+    })
+    defer db.Close()
+
+    // Create User table
+    err := db.Model((*User)(nil)).CreateTable(&orm.CreateTableOptions{
+        IfNotExists: true,
+    })
+    if err != nil {
+        panic(err)
+    }
+
+    // Create Profile table with foreign key constraints
+    err = db.Model((*Profile)(nil)).CreateTable(&orm.CreateTableOptions{
+        FKConstraints: true,
+        IfNotExists:   true,
+    })
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("Tables created successfully")
+}
+```
+
+This example demonstrates sequential creation of related tables with a cascading foreign key.
+
+---
+
+## Troubleshooting
+
+- **`CREATE TABLE` errors:** Ensure you have proper permissions in PostgreSQL and the table name is valid.
+- **Foreign key constraint failures:** Verify that referenced tables and primary keys exist before creating related tables.
+- **Temporary table not found:** Remember that temp tables exist only for the session, so keep the DB connection alive.
+- **Schema changes not reflected:** Re-run migrations or manual drop and create table in development.
+
+---
+
+## Further Reading and Next Steps
+
+- [Defining and Using Models](https://pg.uptrace.dev/api-reference/orm-model-workflows/defining-and-using-models) — Understand struct mapping for tables
+- [Schema Migrations and Tooling](https://pg.uptrace.dev/guides/application-patterns/schema-migrations) — Learn about full migration workflows
+- [Model Relations and Joins](https://pg.uptrace.dev/api-reference/orm-model-workflows/model-relations-and-joins) — Explore how relations influence schema definitions
+- [Working with Composite Types](https://pg.uptrace.dev/guides/working-with-data/composite-types) — Advanced schema techniques
+
+---
+
+By mastering the table creation and schema migration features in go-pg, you will unlock seamless database management aligned with Go’s type system, enabling high productivity and robust application development.
