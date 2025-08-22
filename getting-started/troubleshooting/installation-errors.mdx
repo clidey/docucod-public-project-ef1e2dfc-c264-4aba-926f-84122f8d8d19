@@ -1,0 +1,263 @@
+---
+title: "Resolving Installation and Import Errors"
+description: "Covers the most frequent installation pitfalls, such as missing package versions, module initialization mistakes, or version mismatches. Provides concrete troubleshooting steps and reference checks."
+---
+
+# Resolving Installation and Import Errors
+
+This page helps you swiftly diagnose and resolve the most common installation and import issues encountered when setting up **go-pg**. Whether you're missing a version suffix in your import path, facing module initialization errors, or dealing with version conflicts, this guide offers clear, practical troubleshooting steps to get you past these hurdles.
+
+---
+
+## 1. Common Installation Pitfalls
+
+### Missing Major Version Suffix in Import Path
+
+A frequent error arises from omitting the required major version suffix (`/v10`) in the import path after Go modules adoption.
+
+**Incorrect import:**
+```go
+import "github.com/go-pg/pg"
+```
+
+**Correct import (version 10+):**
+```go
+import "github.com/go-pg/pg/v10"
+```
+
+**Why it matters:** The Go module system enforces semantic import versioning. Failing to specify the exact major version leads to unresolved dependencies or unexpected behavior.
+
+---
+
+### Not Initializing a Go Module
+
+Make sure your project uses Go modules. Without the module initialization, dependency resolution and version control fail.
+
+**Fix:**
+```bash
+go mod init github.com/my/repo
+```
+
+Check for the existence of a `go.mod` file at your project's root.
+
+---
+
+### Version Mismatch Between go-pg Module and Your Code
+
+Using `go get` without specifying the version or using the wrong version can cause compatibility problems.
+
+**Ensure you're explicitly installing the current version:**
+```bash
+go get github.com/go-pg/pg/v10
+```
+
+Then verify your `go.mod` reflects the correct module line:
+```
+require github.com/go-pg/pg/v10 v10.x.x
+```
+
+---
+
+## 2. Step-by-Step Troubleshooting Instructions
+
+Follow this sequence to identify and fix installation or import errors:
+
+<Steps>
+<Step title="Verify Go Module Initialization">
+Ensure your project is initialized as a Go module.
+
+```bash
+ls go.mod
+```
+
+If missing, initialize it:
+
+```bash
+go mod init github.com/my/repo
+```
+</Step>
+
+<Step title="Check Import Path for go-pg">
+Verify that your import path includes the `/v10` suffix:
+
+```go
+import "github.com/go-pg/pg/v10"
+```
+
+This must align with the version installed.
+</Step>
+
+<Step title="Install go-pg v10 via go get">
+Run the following to add the module explicitly:
+
+```bash
+go get github.com/go-pg/pg/v10
+```
+
+This ensures the correct major version is fetched.
+</Step>
+
+<Step title="Run go mod tidy to Refresh Dependencies">
+Clean up your dependencies:
+
+```bash
+go mod tidy
+```
+
+This removes unused modules and ensures correct versions.
+</Step>
+
+<Step title="Build Minimal Test Program to Validate Installation">
+Create a simple Go file to verify the import and basic usage:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+)
+
+func main() {
+    fmt.Println("go-pg imported successfully")
+}
+```
+
+Build and run:
+
+```bash
+go run main.go
+```
+</Step>
+</Steps>
+
+<Check>
+If this completes without errors, your installation is correct.
+If errors persist, double-check your `go.mod` file and import paths.
+</Check>
+
+---
+
+## 3. Specific Error Messages & Their Solutions
+
+### Error: `cannot find module for path github.com/go-pg/pg` or "package not found"
+
+**Cause:** Missing `/v10` at the end of the import path or no Go module initialized.
+
+**Fix:**
+- Add `/v10` to the import path.
+- Initialize your Go module.
+
+### Error: `go: github.com/go-pg/pg@vX: invalid version` or version not found
+
+**Cause:** Trying to get an incorrect or unavailable version.
+
+**Fix:**
+- Use `go get github.com/go-pg/pg/v10` explicitly.
+- Run `go clean -modcache` to clear potentially corrupted caches.
+
+### Error: `module declares its path as: github.com/go-pg/pg/v10` but was required as `github.com/go-pg/pg` 
+
+**Cause:** Mismatch between declared module and imported path.
+
+**Fix:**
+Update all import statements to include `/v10`.
+
+### Error: "cannot use pg.Connect(...) as type ..."
+
+**Cause:** Version mix-up where different packages or dependencies expect different major versions.
+
+**Fix:**
+Enforce consistent versioning throughout dependencies, consider running `go mod graph` to investigate.
+
+---
+
+## 4. Validation and Verification Steps
+
+### Confirm Installed Version
+
+Check which version of go-pg is used by running:
+
+```bash
+go list -m all | grep github.com/go-pg/pg
+```
+
+It should output something like:
+```
+github.com/go-pg/pg v10.x.x
+```
+
+---
+
+### Build and Run a Sample
+
+Use the following simple test to confirm proper import and basic functionality:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-pg/pg/v10"
+)
+
+func main() {
+    db := pg.Connect(&pg.Options{User: "postgres"})
+    defer db.Close()
+
+    var n int
+    _, err := db.QueryOne(pg.Scan(&n), "SELECT 1")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(n) // Output should be 1
+}
+```
+
+Compile and run:
+```bash
+go run main.go
+```
+
+---
+
+## 5. Best Practices and Tips
+
+- Always use Go Modules and keep dependencies tidy.
+- Explicitly specify `/v10` in all import statements for go-pg version 10.
+- Regularly run `go mod tidy` to avoid dependency mismatches.
+- If using an IDE, reload or restart it after modifying `go.mod` to reflect accurate dependencies.
+- Lock dependency versions in `go.mod` to avoid unexpected upgrades.
+
+---
+
+## 6. Common Pitfalls and How to Avoid Them
+
+- **Incorrect import path without major version suffix:** Always double-check import lines.
+- **Mixing versions in dependencies:** Use `go mod graph` to identify and resolve conflicts.
+- **Using `go get` without a version:** Always specify the version for stable builds.
+- **Not initializing a module:** Without `go.mod`, go-pg cannot be resolved correctly.
+
+---
+
+## 7. Additional Resources
+
+- [Official go-pg Installation Guide](https://pg.uptrace.dev/guides/getting-started/installation-setup)
+- [Go Modules Reference](https://blog.golang.org/using-go-modules)
+- [Troubleshooting Common Go Module Issues](https://github.com/golang/go/wiki/Modules#troubleshooting)
+
+---
+
+## 8. Getting Further Help
+
+If you still encounter issues:
+
+- Check GitHub issues at [go-pg repository](https://github.com/go-pg/pg/issues).
+- Join the developer chat on Discord linked via the repo.
+- Consult the broader community under Go Modules and Go PostgreSQL tags on Stack Overflow.
+
+---
+
+By following these clear steps, you will successfully resolve installation and import errors with go-pg and set a solid foundation for building your Go applications with PostgreSQL.
+
+---
