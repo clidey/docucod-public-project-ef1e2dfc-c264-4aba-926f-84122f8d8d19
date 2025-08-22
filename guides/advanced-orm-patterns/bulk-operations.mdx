@@ -1,0 +1,308 @@
+---
+title: "Bulk and Batch Operations"
+description: "Learn how to efficiently insert, update, and delete large sets of records using go-pg’s bulk features. Includes batch operation patterns, handling errors, and minimizing transaction overhead."
+---
+
+# Bulk and Batch Operations
+
+Efficiently managing large sets of database records is crucial for performance and scalability when working with PostgreSQL in Go. This guide focuses solely on using go-pg's bulk and batch operation features to insert, update, and delete multiple records effectively, minimizing database round-trips and transaction overhead.
+
+---
+
+## 1. Overview of Bulk and Batch Operations
+
+### What This Guide Helps You Accomplish
+
+- Perform bulk inserts, updates, and deletes with large record sets.
+- Use batch execution patterns to reduce the number of queries sent to the database.
+- Handle errors gracefully during batch operations.
+- Optimize transaction scope when manipulating multiple records.
+
+### Prerequisites
+
+- You have an active go-pg `*pg.DB` connection established.
+- Basic familiarity with defining models and performing single-record CRUD operations using go-pg.
+- PostgreSQL database ready with tables corresponding to your models.
+
+### Expected Outcome
+
+- You will be able to write code that efficiently handles large numbers of records in a single database call or in batches.
+- Your applications will consume fewer resources and exhibit better throughput when processing multiple records.
+
+### Time Estimate
+
+- 20 to 40 minutes to read through and implement the examples.
+
+### Difficulty Level
+
+- Intermediate (some understanding of go-pg ORM patterns and transactions required)
+
+---
+
+## 2. Performing Bulk Inserts
+
+### Basic Bulk Insert
+
+Bulk insert allows inserting multiple records in one query, significantly improving throughput.
+
+```go
+// Assume type User with appropriate pg struct tags
+users := []User{
+    {Name: "Alice", Emails: []string{"alice@example.com"}},
+    {Name: "Bob", Emails: []string{"bob@example.com"}},
+}
+
+_, err := db.Model(&users).Insert()
+if err != nil {
+    log.Fatalf("Bulk insert error: %v", err)
+}
+```
+
+#### What Happens Here
+
+- `db.Model(&users).Insert()` generates a single `INSERT` SQL with multiple value sets.
+- The operation is wrapped in one transaction implicitly by go-pg.
+
+#### Important Tips
+
+- Ensure your structs define primary keys correctly.
+- Use `pg:"notnull"` tag where applicable to avoid null insertion issues.
+
+### Advanced Bulk Insert Options
+
+- You can control chunk sizes or break your inserts into smaller batches for very large datasets (see batching below).
+
+---
+
+## 3. Bulk Updates
+
+Updating multiple rows can be done efficiently by executing batch updates or specific bulk update features in go-pg.
+
+### Basic Bulk Update
+
+Go-pg supports updating multiple records by running an update per record in a single transaction but does not build multi-record `UPDATE` SQLs. Use a transaction with batch calls:
+
+```go
+// List of users with updated data
+users := []*User{
+    {Id: 1, Name: "Alice Updated"},
+    {Id: 2, Name: "Bob Updated"},
+}
+
+err := db.RunInTransaction(ctx, func(tx *pg.Tx) error {
+    for _, u := range users {
+        if _, err := tx.Model(u).Column("name").WherePK().Update(); err != nil {
+            return err
+        }
+    }
+    return nil
+})
+
+if err != nil {
+    log.Fatalf("Bulk update failed: %v", err)
+}
+```
+
+### Performance Considerations
+
+- If updating many rows, consider batching updates into smaller chunks within a transaction.
+- Alternatively, write raw SQL batch updates using `db.Exec` with a CASE expression if needed for complex scenarios.
+
+---
+
+## 4. Bulk Deletes
+
+Deleting multiple records efficiently is commonly done using filters or batch deletes.
+
+### Delete by Model Slice
+
+If you have several model instances to delete:
+
+```go
+users := []*User{{Id: 1}, {Id: 2}, {Id: 3}}
+
+_, err := db.Model(&users).WherePK().Delete()
+if err != nil {
+    log.Fatalf("Bulk delete failed: %v", err)
+}
+```
+
+### Delete by Condition
+
+For deleting records by a condition:
+
+```go
+_, err := db.Model((*User)(nil)).Where("created_at < now() - interval '1 year'").Delete()
+if err != nil {
+    log.Fatalf("Conditional bulk delete failed: %v", err)
+}
+```
+
+---
+
+## 5. Batch Operation Patterns
+
+Handling very large datasets requires breaking bulk operations into smaller batches to avoid exceeding memory or query size limits.
+
+### Batch Processing Example
+
+```go
+const batchSize = 100
+
+for i := 0; i < len(users); i += batchSize {
+    end := i + batchSize
+    if end > len(users) {
+        end = len(users)
+    }
+    batch := users[i:end]
+    _, err := db.Model(&batch).Insert()
+    if err != nil {
+        log.Fatalf("Batch insert error on batch %d: %v", i/batchSize, err)
+    }
+}
+```
+
+### Benefits
+
+- Limits peak memory usage.
+- Avoids large transactions that can lock tables for extended periods.
+- Provides fine-grained error handling per batch.
+
+---
+
+## 6. Handling Errors in Bulk Operations
+
+### Common Error Scenarios
+
+- Unique constraint violations.
+- Exceeding parameter limits in a single query.
+- Partial failures within a batch.
+
+### Best Practices
+
+- Use transactions to wrap batch operations to ensure atomicity.
+- Handle errors by logging and optionally retrying failed batches.
+- Use `OnConflict` clauses if you need to handle conflicts gracefully.
+
+Example:
+
+```go
+_, err := db.Model(&users).
+    OnConflict("DO NOTHING").
+    Insert()
+if err != nil {
+    log.Printf("Insert with conflict handling error: %v", err)
+}
+```
+
+---
+
+## 7. Minimizing Transaction Overhead
+
+Although go-pg implicitly wraps operations in transactions where needed, large operations benefit from explicit transaction management.
+
+### Using Explicit Transactions
+
+```go
+err := db.RunInTransaction(ctx, func(tx *pg.Tx) error {
+    if _, err := tx.Model(&users).Insert(); err != nil {
+        return err
+    }
+    // Add other operations in the same transaction if needed
+    return nil
+})
+if err != nil {
+    log.Fatalf("Transaction failed: %v", err)
+}
+```
+
+### Benefits
+
+- All batch operations commit or rollback atomically.
+- Reduces overhead of opening multiple transactions.
+- Provides clearer error boundaries and rollback control.
+
+---
+
+## 8. Real-World Scenario: Importing Users in Bulk
+
+Imagine you have a CSV dump of thousands of users to import:
+
+### Step-by-step
+
+1. Parse CSV into a slice of User structs.
+2. Process in batches (e.g., 500 users per batch).
+3. Use `Insert()` with `OnConflict("DO NOTHING")` to avoid duplication.
+4. Wrap batch inserts in a transaction if additional operations apply.
+
+### Example
+
+```go
+const batchSize = 500
+for i := 0; i < len(users); i += batchSize {
+    end := i + batchSize
+    if end > len(users) {
+        end = len(users)
+    }
+    batch := users[i:end]
+    _, err := db.Model(&batch).
+        OnConflict("DO NOTHING").
+        Insert()
+    if err != nil {
+        log.Fatalf("Failed to insert batch %d: %v", i/batchSize, err)
+    }
+}
+```
+
+---
+
+## 9. Troubleshooting Common Issues
+
+### Batch Operation Fails Completely
+
+- Check if you exceeded PostgreSQL's maximum number of parameters in a single query.
+- Solution: Reduce batch size.
+
+### Partial Data Inserted Despite Errors
+
+- Use explicit transactions to ensure atomicity.
+- Rollback occurs automatically on error in `RunInTransaction`.
+
+### Unique Constraint Violations on Bulk Insert
+
+- Use `OnConflict` clause to handle duplicates gracefully.
+
+### Unexpected Transaction Errors
+
+- Ensure context deadlines or cancellations are not prematurely ending transactions.
+
+---
+
+## 10. Best Practices for Bulk and Batch Operations
+
+- Always test bulk operations on a staging environment with realistic data volumes.
+- Monitor query execution time to tune batch sizes.
+- Use explicit transactions when multiple related batch operations need atomicity.
+- Catch and handle errors at batch level for better diagnostics.
+- Consider indexing and database constraints to optimize bulk operation performance.
+
+---
+
+## 11. Next Steps & Further Reading
+
+- Explore [Transactions and Prepared Statements](/guides/real-world-integration-patterns/transaction-management) to deepen transaction handling.
+- Review [Connection Pooling and Performance Tuning](/guides/real-world-integration-patterns/performance-pooling) for optimizing bulk operation throughput.
+- Learn about [Working with Notifications and Bulk Copy](/guides/real-world-integration-patterns/notifications-copy) for streaming large datasets.
+
+---
+
+## Additional Resources
+
+- Official go-pg examples on [Bulk Insert](https://pkg.go.dev/github.com/go-pg/pg/v10?tab=doc#example-DB.Model-BulkInsert)
+- [OnConflict Handling](https://pkg.go.dev/github.com/go-pg/pg/v10?tab=doc#example-DB.Model-InsertOnConflictDoUpdate)
+
+---
+
+This page focuses specifically on the patterns and code you need to write bulk or batch database operations efficiently, complementing your knowledge from the basic CRUD and modeling guides.
+
+
