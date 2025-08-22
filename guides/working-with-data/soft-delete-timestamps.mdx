@@ -1,0 +1,247 @@
+---
+title: "Soft Deletes and Timestamps"
+description: "Leverage go-pg features to implement soft deletes and automatic timestamp management on your models, for safer record deletion and better audit trails."
+---
+
+# Soft Deletes and Timestamps
+
+Leverage go-pg features to implement soft deletes and automatic timestamp management on your models, enabling safer record deletion and comprehensive audit trails in your Go applications.
+
+---
+
+## Overview
+
+Soft deletes allow you to mark records as deleted without physically removing them from the database, preserving historical data and enabling easy recovery. Alongside this, automatic timestamp management tracks creation, update, and deletion times seamlessly, relieving you from manual bookkeeping.
+
+This guide walks you through how to implement soft delete functionality and manage timestamps using go-pg's conventions and hooks on your ORM models.
+
+---
+
+## Prerequisites
+
+- Basic understanding of go-pg ORM model definitions
+- Your models defined as Go structs with proper field tags
+- A running PostgreSQL database connected through go-pg
+
+---
+
+## What You Will Achieve
+
+- Define soft delete fields in your models
+- Enable automatic filtering of soft-deleted records
+- Use provided model query methods to include/exclude deleted records
+- Automatically track deletion timestamps
+- Implement custom timestamp fields with PostgreSQL compliant types
+
+---
+
+## Step-by-Step: Implementing Soft Deletes and Timestamps
+
+### 1. Define a Soft Delete Field in Your Model
+
+Add a field in your struct to hold the deletion timestamp and tag it for soft delete behavior with `pg:",soft_delete"`.
+
+```go
+import "github.com/go-pg/pg/v10/types"
+
+type Video struct {
+    Id        int
+    Name      string
+    DeletedAt types.NullTime `pg:",soft_delete"`
+}
+```
+
+- The field type is typically `types.NullTime` or a custom type that implements go-pg's `ValueScanner` and `ValueAppender` interfaces.
+- The `soft_delete` tag informs go-pg that this field manages soft deletion.
+
+### 2. Insert Records Normally
+
+Insert records without any special considerations:
+
+```go
+video := &Video{Name: "Tutorial"}
+_, err := db.Model(video).Insert()
+if err != nil {
+    // handle error
+}
+```
+
+### 3. Soft Delete a Record Using `.Delete()` Method
+
+Calling `Delete()` on a model with a soft delete field sets the deletion timestamp instead of removing the row:
+
+```go
+_, err = db.Model(video).WherePK().Delete()
+if err != nil {
+    // handle error
+}
+```
+
+This issues an `UPDATE` that sets `DeletedAt` rather than a physical delete.
+
+### 4. Querying with Soft Delete Filters
+
+- **Default behavior:** Queries exclude soft-deleted records by automatically adding `WHERE deleted_at IS NULL`.
+- **Include only deleted records:** Use `.Deleted()` in the query.
+- **Include all records (deleted and active):** Use `.AllWithDeleted()`.
+
+Example:
+
+```go
+// Count active (non-deleted) videos
+count, err := db.Model((*Video)(nil)).Count()
+
+// Count deleted videos only
+deletedCount, err := db.Model((*Video)(nil)).Deleted().Count()
+
+// Count all videos including deleted
+allCount, err := db.Model((*Video)(nil)).AllWithDeleted().Count()
+```
+
+### 5. Fully Delete a Record Using `.ForceDelete()`
+
+To physically remove the row from the database, bypassing soft delete, use `.ForceDelete()`:
+
+```go
+_, err = db.Model(video).WherePK().ForceDelete()
+```
+
+This produces a standard `DELETE` SQL command.
+
+### 6. Use Custom Timestamp Types (Optional)
+
+You can define custom time types that implement the scanning and appending interfaces for flexible control over timestamp formatting.
+
+Example from the provided sample:
+
+```go
+type CustomTime struct {
+    Time time.Time
+}
+
+func (tm *CustomTime) ScanValue(rd types.Reader, n int) error {
+    var err error
+    tm.Time, err = types.ScanTime(rd, n)
+    return err
+}
+
+func (tm *CustomTime) AppendValue(b []byte, flags int) ([]byte, error) {
+    return types.AppendTime(b, tm.Time, flags), nil
+}
+
+// Usage in model
+// DeletedAt CustomTime `pg:",soft_delete"`
+```
+
+This allows fully customized timestamp serialization while retaining soft-delete functionality.
+
+---
+
+## Practical Tips & Best Practices
+
+- **Always use `.WherePK()` or other precise conditions when deleting specific records to avoid unintended soft deletes.**
+- **Remember that by default, soft-deleted records are invisible to queries, preventing accidental use.**
+- **Use `.Deleted()` and `.AllWithDeleted()` explicitly when your application logic requires.
+- **Implement database indexes on soft delete timestamp fields if you expect filtering by this column to improve query performance.**
+- **For audit trails beyond deletion, add `CreatedAt` and `UpdatedAt` timestamp fields and manage them via hooks or triggers.**
+
+---
+
+## Common Pitfalls & Troubleshooting
+
+<AccordionGroup title="Soft Deletes - Common Issues">
+<Accordion title="Records Not Being Filtered Correctly">
+
+Check if your model has the soft delete tag correctly declared on the timestamp field. Without it, go-pg cannot apply the filters automatically.
+
+</Accordion>
+<Accordion title="Physical Delete Happen Instead of Soft Delete">
+
+Ensure you only call `.Delete()` on soft delete-enabled models for soft delete semantics. Calling `.ForceDelete()` or the underlying `DELETE` SQL will remove records.
+
+</Accordion>
+<Accordion title="Query Includes Soft Deleted Records Unexpectedly">
+
+Verify you have not used `.AllWithDeleted()` or distracted by joins that might change the filtering behavior. Joins sometimes require explicit conditions.
+
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Example Complete Workflow
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "time"
+
+    "github.com/go-pg/pg/v10"
+    "github.com/go-pg/pg/v10/types"
+)
+
+type Video struct {
+    Id        int
+    Name      string
+    DeletedAt types.NullTime `pg:",soft_delete"`
+}
+
+func main() {
+    db := pg.Connect(&pg.Options{
+        Addr: "localhost:5432",
+        User: "postgres",
+        Password: "pass",
+        Database: "mydb",
+    })
+    defer db.Close()
+
+    video := &Video{Name: "go-pg Tutorial"}
+    if _, err := db.Model(video).Insert(); err != nil {
+        log.Fatal(err)
+    }
+
+    // Soft delete the video
+    if _, err := db.Model(video).WherePK().Delete(); err != nil {
+        log.Fatal(err)
+    }
+
+    // Count active videos
+    count, err := db.Model((*Video)(nil)).Count()
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Active videos count: %d\n", count)
+
+    // Count soft deleted videos
+    deletedCount, err := db.Model((*Video)(nil)).Deleted().Count()
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Soft deleted videos count: %d\n", deletedCount)
+
+    // Force delete from DB
+    if _, err := db.Model(video).WherePK().ForceDelete(); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+---
+
+## Additional Resources
+
+- [SoftDeleteModel Concepts & Options](https://github.com/go-pg/pg/blob/main/example_soft_delete_test.go) - practical code reference
+- Guide: [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud)
+- Guide: [Advanced Queries and Model Relationships](/guides/working-with-data/advanced-queries-relations)
+- Guide: [Configuration & Connecting to PostgreSQL](/getting-started/setup/configuration-setup)
+
+---
+
+## Summary
+
+Soft deletes and timestamp management in go-pg offer powerful, intuitive tools to keep your data safe and track changes systematically. By appropriately tagging your timestamp fields, using query builder methods like `.Deleted()` and `.AllWithDeleted()`, and optionally implementing custom timestamp types, you can build robust, maintainable applications with reliable soft delete semantics.
+
+For detailed model behavior and hooks, consider exploring the `[Model Workflows](/api-reference/orm-model-workflows/defining-and-using-models)` page to maximize your go-pg ORM usage.
