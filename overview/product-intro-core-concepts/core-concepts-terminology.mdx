@@ -1,0 +1,177 @@
+---
+title: "Core Concepts & Terminology"
+description: "Establish your understanding of the main terms and ideas go-pg introduces, such as ORM, models, transactions, query building, connection pooling, and relation mapping. This foundational knowledge helps you confidently approach more advanced features and workflows."
+---
+
+# Core Concepts & Terminology
+
+Unlock the foundational language and ideas that power go-pg, the high-performance PostgreSQL client and ORM for Go. This guide provides clear explanations of key terms and concepts like ORM, models, query building, transactions, connection pooling, and relation mapping, equipping you with the essential knowledge to navigate go-pg confidently and effectively.
+
+---
+
+## Understanding the Building Blocks of go-pg
+
+### What You Will Learn Here
+- The core vocabulary and concepts behind go-pg’s design
+- How go-pg enables interaction with PostgreSQL databases through an intuitive ORM
+- The role of models, queries, transactions, and connections in day-to-day use
+- How relation mapping and query building simplify complex database operations
+
+
+---
+
+## Why Core Concepts Matter
+
+Before diving into usage or advanced techniques, understanding these concepts ensures you:
+
+- **Write clearer, more efficient queries:** Know the tools and abstractions go-pg provides.
+- **Avoid common pitfalls:** Grasp the underlying behaviors of transactions, pooling, and relations.
+- **Build scalable applications:** Understand how go-pg manages connections and data flow.
+
+
+---
+
+## Key Concepts Explained
+
+### Object-Relational Mapping (ORM)
+At the heart of go-pg is its ORM layer, which bridges Go structs and PostgreSQL tables. Rather than writing raw SQL, you define Go "models" that represent your tables; go-pg handles the translation between Go code and SQL commands.
+
+**Benefit:**
+- Enables clean, type-safe interaction with your database.
+- Simplifies CRUD operations without sacrificing power.
+
+
+### Models
+A *model* is a Go struct tagged to correspond to a PostgreSQL table. Fields in your struct map to columns in the table.
+
+**Example:**
+```go
+type User struct {
+  ID     int64  `pg:"id,pk"`
+  Name   string `pg:"name"`
+  Emails []string `pg:",array"`
+}
+```
+
+**Why Models Matter:**
+- They are your primary interface for data persistence.
+- They enable features like relations, JSONB support, and more advanced PostgreSQL types.
+
+
+### Queries and Query Building
+Queries in go-pg are constructed programmatically, using its fluent API. Instead of crafting SQL strings manually, you build queries step-by-step, binding parameters safely and clearly.
+
+**What You Can Do:**
+- Filter records
+- Join related models
+- Sort and paginate
+- Execute transactions atomically
+
+**Example:**
+```go
+users := make([]User, 0)
+err := db.Model(&users).Where("name = ?", "Alice").Select()
+```
+
+
+### Transactions
+go-pg provides explicit transaction control, allowing you to group multiple operations that should succeed or fail together.
+
+**Benefits:**
+- Ensures data consistency
+- Supports atomic updates
+- Simplifies error handling within critical workflows
+
+
+### Connection Pooling
+go-pg manages PostgreSQL connections efficiently by pooling them to reduce overhead and improve performance.
+
+**Why This Helps:**
+- Avoids the cost of repeatedly opening and closing database connections.
+- Allows concurrent usage without exhausting resources.
+
+
+### Relation Mapping
+go-pg supports ORM-style relations between models such as one-to-one, one-to-many, and many-to-many.
+
+**How It Helps:**
+- Automatically load related data.
+- Enables complex queries across table relations.
+
+**Example:**
+```go
+type Post struct {
+  ID      int64
+  AuthorID int64
+  Author  *User `pg:"rel:has-one"`
+}
+```
+
+You can easily load posts with their author data in one go.
+
+---
+
+## Practical Scenario
+Imagine you’re building a blog platform.
+
+- Define **User** and **Post** models to represent authors and their articles.
+- Use **relation mapping** to link posts to authors.
+- Construct queries to fetch posts with author info using go-pg’s ORM methods.
+- Manage edits and comments inside **transactions** to keep data consistent.
+
+This conceptual clarity enables you to develop confidently, knowing how go-pg components interrelate.
+
+---
+
+## Common Pitfalls & Best Practices
+
+- **Always use models to interact with the database.** Avoid raw SQL when possible to keep queries safe and maintainable.
+- **Handle errors on transactions carefully** to rollback and prevent data inconsistency.
+- **Make use of connection pooling limits** to optimize resource usage effectively.
+- **Use ORM relations smartly** to prevent loading unnecessary data.
+
+---
+
+## Summary of Terms
+| Term               | Description                                                 |
+|--------------------|-------------------------------------------------------------|
+| ORM                | Maps Go structs (models) to database tables.                |
+| Model              | A Go struct representing a database table.                  |
+| Query              | A programmatic representation of a SQL operation.           |
+| Transaction        | A group of database operations that execute atomically.      |
+| Connection Pooling | Reuse of database connections to improve performance.       |
+| Relation Mapping   | Defining relationships between models/tables (e.g., joins). |
+
+---
+
+## Next Steps
+To apply these core concepts:
+
+<Steps>
+<Step title="Set Up Your Models">
+Define simple Go structs representing your database tables.
+</Step>
+<Step title="Build Basic Queries">
+Practice querying data using go-pg’s fluent API.
+</Step>
+<Step title="Explore Transactions">
+Learn how to group operations for atomicity.
+</Step>
+</Steps>
+
+Explore related pages:
+- [What is go-pg?](/overview/product-intro-core-concepts/what-is-go-pg)
+- [Key Features at a Glance](/overview/product-intro-core-concepts/feature-overview)
+- [Defining Models and Basic CRUD](/guides/getting-started/define-models-crud)
+
+---
+
+## Additional Resources
+- [Official Repository](https://github.com/go-pg/pg) for source code and community
+- [API Reference](../api-reference/core-db-interfaces/db-connection-and-configuration) for detailed usage
+
+---
+
+By mastering these core concepts, you form the foundation to unlock go-pg’s full potential, accelerating your backend development with PostgreSQL and Go.
+
+---
