@@ -1,0 +1,296 @@
+---
+title: "Connection Pooling and Reliability"
+description: "Understand and tune go-pg’s built-in connection pooling, circuit breaker support, and retry strategies for robust, high-throughput applications."
+---
+
+# Connection Pooling and Reliability
+
+Efficient and reliable database connections are the foundation of high-performance applications using go-pg. This guide focuses explicitly on understanding, configuring, and effectively using go-pg’s built-in connection pooling mechanisms, including advanced features like circuit breaking and connection reuse strategies. By mastering these concepts, you will ensure your application maintains robust connectivity with PostgreSQL under heavy load, minimizes latency, and maximizes throughput.
+
+---
+
+## Workflow Overview
+
+### What This Guide Helps You Achieve
+Gain a clear, practical understanding of how to configure and optimize go-pg’s connection pools. Learn how connection acquisition, reuse, and release occur, and how to handle common edge cases such as connection timeouts and stale connections.
+
+### Prerequisites
+- Basic familiarity with go-pg usage and initialization
+- Understanding of PostgreSQL connections
+- Access to modify your go-pg client configuration
+
+### Expected Outcome
+- Know how go-pg manages connection pooling internally
+- Ability to configure connection pool options to suit your workload
+- Strategies to handle connection timeouts, idle connections, and circuit breaking
+- Skills to troubleshoot common pooling issues
+
+### Time Estimate
+10-15 minutes to understand concepts and configure your pool properly
+
+### Difficulty Level
+Intermediate — assumes understanding of Go context and concurrency concepts
+
+---
+
+## Step-by-Step Guide to Using go-pg Connection Pooling
+
+### 1. Understanding Connection Pool Basics
+
+go-pg uses `ConnPool` as the default pooled connection manager. It maintains active and idle connections, automatically dialing new ones when needed, up to a configured maximum.
+
+- **Get()** acquires a connection from the pool by:
+  - Returning an idle connection if available
+  - Creating a new connection if pool size after creation does not exceed the max limit
+  - Blocking or timing out if all connections are in use and the pool is at max size
+
+- **Put()** returns a connection back to the pool for reuse.
+
+- **Remove()** removes a broken or stale connection from the pool and closes it.
+
+
+### 2. Configuring the Connection Pool
+
+To configure the pool, set options in `pool.Options` when creating it using `NewConnPool`:
+
+| Option                | Description                                                       | Default / Behavior                                             |
+|-----------------------|-------------------------------------------------------------------|---------------------------------------------------------------|
+| PoolSize              | Maximum number of connections in the pool                        | Required, e.g., 10, 100                                        |
+| MinIdleConns          | Minimum number of idle connections maintained                    | Optional; 0 means no min idle connection enforcement           |
+| PoolTimeout           | How long Get() waits for a connection when pool is exhausted    | Defaults to blocking until timeout (recommended to limit wait) |
+| IdleTimeout           | Duration before idle connections are considered stale and closed| Optional; 0 disables stale detection                           |
+| IdleCheckFrequency    | Frequency of background checks for stale connections            | Optional; recommended if using IdleTimeout                     |
+| MaxConnAge            | Maximum lifetime for a connection before it is recycled         | Optional; helps avoid long-living connections                   |
+| Dialer                | Function to establish new network connections                    | Required; user-supplied or default Dial function               |
+| OnClose               | Optional hook called before closing a connection                 | Useful for logging or metrics                                 |
+
+
+### 3. Creating and Using the Pool
+
+```go
+import (
+	"context"
+	"time"
+	"github.com/go-pg/pg/v10/internal/pool"
+)
+
+func createPool() *pool.ConnPool {
+	return pool.NewConnPool(&pool.Options{
+		Dialer: func(ctx context.Context) (net.Conn, error) {
+			// Your logic to create a new net.Conn here
+		},
+		PoolSize:           20,              // maximum connections
+		MinIdleConns:       5,               // minimum idle connections
+		PoolTimeout:        5 * time.Second, // wait up to 5 seconds for a connection
+		IdleTimeout:        30 * time.Minute, // idle connection expiration
+		IdleCheckFrequency: 5 * time.Minute, // stale connection clean-frequency
+		MaxConnAge:         time.Hour,       // max connection lifetime
+	})
+}
+
+func useConnection(ctx context.Context, p *pool.ConnPool) error {
+	cn, err := p.Get(ctx)
+	if err != nil {
+		return err
+	}
+	// Make sure to PUT connection back to the pool
+	defer p.Put(ctx, cn)
+
+	// Use cn for queries or commands
+	return nil
+}
+```
+
+
+### 4. Best Practices for Connection Pool Tuning
+
+- Always set reasonable `PoolTimeout` values to avoid blocking clients indefinitely.
+- Use `MinIdleConns` to maintain readiness under burst traffic without excessive connection churn.
+- Enable `IdleTimeout` and `IdleCheckFrequency` to recycle unused connections and recover resources.
+- Use `MaxConnAge` to avoid stale TCP connections and upstream server hiccups caused by overly long-living connections.
+- Provide an efficient `Dialer` function that quickly establishes the connection.
+- Use the `OnClose` hook to release custom resources or track connection lifecycle metrics.
+
+
+### 5. Handling High Contention and Circuit Breaking
+
+When `Get()` cannot provide a connection immediately due to pool exhaustion:
+
+- The pool blocks until a connection is returned or until `PoolTimeout` expires, returning an error `pg: connection pool timeout`.
+- The internal circuit breaker tracks dial errors. If dialing repeatedly fails, new connection attempts fail immediately until recovery.
+- You can monitor pool stats via `Stats()` to analyze hits, misses, timeouts, and stale connection removals to identify performance bottlenecks.
+
+
+### 6. Closing the Pool
+
+Call `Close()` on your connection pool when your application or client is shutting down to properly release all connections.
+
+```go
+err := pool.Close()
+if err != nil {
+	// handle error gracefully
+}
+```
+
+This blocks new acquisitions and closes existing connections carefully.
+
+
+---
+
+## Practical Tips and Common Pitfalls
+
+- **Do not hold on to connections indefinitely.** Always `Put` connections promptly after use to avoid blocking.
+- **Be mindful of context cancellations and timeouts** when using `Get`. Cancelled contexts result in immediate operation termination.
+- **Avoid overly large pool sizes unless necessary.** Larger pools increase resource consumption.
+- When configuring `MinIdleConns`, ensure your `PoolSize` is sufficient to accommodate both idle and active connections.
+- If experiencing frequent timeouts, verify `PoolTimeout` and pool size.
+- Use pool stats (`Stats()`) during development to monitor connection reuse rates and diagnose connection pressure.
+
+
+---
+
+## Troubleshooting Connection Pool Issues
+
+### Connection Pool Timeout Errors
+
+- This occurs if all pooled connections are in use and no new connections become available within `PoolTimeout`.
+
+**Solution:**
+- Increase `PoolSize`
+- Increase `PoolTimeout`
+- Review connection usage to ensure connections are released timely
+
+### Dialer Errors and Circuit Breaker Tripping
+
+- If the dialer frequently fails, the pool's internal counter may cause all dial attempts to fail fast.
+
+**Solution:**
+- Diagnose network or PostgreSQL server issues
+- Check your custom dialer implementation
+- Use monitoring/logging to control frequency of dial failures
+
+### Stale Connections Not Being Reaped
+
+- Without `IdleTimeout` and `IdleCheckFrequency`, idle connections never get recycled.
+
+**Solution:**
+- Enable these options to allow the pool to close stale connections periodically
+
+### Concurrent Access Issues
+
+- The pool is designed for concurrency. Race conditions usually stem from application misuse, such as using a connection after Put or Remove.
+
+**Solution:**
+- Ensure proper connection lifecycle management
+- Use the built-in connection methods safely
+
+
+---
+
+## Monitoring Pool State and Metrics
+
+You can retrieve real-time statistics from the pool:
+
+```go
+stats := pool.Stats()
+log.Printf("Hits: %d, Misses: %d, Timeouts: %d, Total: %d, Idle: %d, Stale: %d",
+	stats.Hits, stats.Misses, stats.Timeouts, stats.TotalConns, stats.IdleConns, stats.StaleConns)
+```
+
+- **Hits:** How many times a connection was immediately available
+- **Misses:** How many times the pool had to create a new connection
+- **Timeouts:** How many times connection acquisition timed out
+- **TotalConns:** Current total connections in the pool
+- **IdleConns:** Connections ready for immediate reuse
+- **StaleConns:** Connections closed due to being stale
+
+Using these stats helps you adjust pool parameters according to real workload patterns.
+
+---
+
+## Advanced Connection Pool Types
+
+go-pg also offers specialized pool types built on `Pooler` interface:
+
+- **StickyConnPool:** Maintains a single "sticky" connection useful for operations that require persistent session state.
+- **SingleConnPool:** Wraps a single connection for exclusive use.
+
+These types are useful in more specialized or low-level scenarios and can be layered on top of `ConnPool`.
+
+---
+
+## Diagram: go-pg Connection Pool Workflow
+
+```mermaid
+flowchart TD
+    A[Client calls Get()] --> B{Idle connection available?}
+    B -- Yes --> C[Return idle connection]
+    B -- No --> D{Pool size < max PoolSize?}
+    D -- Yes --> E[Dial new connection]
+    E --> F[Add connection to pool & return]
+    D -- No --> G[Wait for connection or timeout]
+    G -- Connection freed --> C
+    G -- Timeout --> H[Return ErrPoolTimeout]
+
+    C --> I[Client uses and then Put()] --> J[Connection goes back to idle]
+    H --> K[Error handling]
+
+    subgraph Reaper Loop
+        L[Periodic check IdleTimeout & MaxConnAge]
+        L --> M{Found stale connections?}
+        M -- Yes --> N[Close stale connections]
+        M -- No --> L
+    end
+    
+    J --> L
+```
+
+---
+
+## Next Steps and Related Topics
+
+- Explore **Managing Transactions** guide to learn how connection pooling interacts with transaction workflows.
+- Refer to **Error Handling & Context Usage** for best practices managing cancellations and network errors.
+- Dive into **Schema Migrations and Tooling** for managing database schema alongside pooled connections.
+- Visit **Performance & Best Practices** section for tuning queries alongside connection resources.
+
+---
+
+## Summary
+
+By understanding and properly configuring go-pg’s connection pool, you ensure your application sustains high throughput and reliability under load. Adjusting pool size, timeouts, and idle connection management leads to efficient resource usage and stable database connectivity.
+
+Keep pool stats in your diagnostics toolbox and prefer graceful acquisition and release of connections within your application to maximize go-pg’s powerful pooling capabilities.
+
+
+---
+
+## Additional Resources
+
+- [go-pg GitHub Repository](https://github.com/go-pg/pg)
+- [Getting Started: Configuration & Connecting to PostgreSQL](https://your-documentation-url/getting-started/setup/configuration-setup)
+- [Core Concepts & Terminology](https://your-documentation-url/overview/product-intro-core-concepts/core-concepts-terminology)
+- [Managing Transactions](https://your-documentation-url/guides/application-patterns/transactions)
+- [Error Handling & Context Usage](https://your-documentation-url/guides/performance-best-practices/error-handling-ctx)
+
+
+---
+
+## Code Reference Highlights (go-pg internal pool package)
+
+- `ConnPool` manages the core pooling logic: `Get()`, `Put()`, `Remove()`, `Close()`.
+- Pool options control dialing, pool size, idle timeouts, and cleanup frequency.
+- Internal stats track hits, misses, timeouts, and stale connection counts.
+- Background reaper goroutine closes stale (idle or overaged) connections safely.
+- Connection acquisition respects context cancellation and pool timeouts.
+
+By understanding this flow, you gain confidence in tuning and using pool behavior to best fit your application scenario.
+
+
+<Tip>
+Always program defensively: avoid long-lived holds on pooled connections and monitor your pool metrics frequently in production.
+</Tip>
+
+<Note>
+If you require a single persistent connection for stateful operations, consider using the `StickyConnPool` or `SingleConnPool` wrapper types.
+</Note>
