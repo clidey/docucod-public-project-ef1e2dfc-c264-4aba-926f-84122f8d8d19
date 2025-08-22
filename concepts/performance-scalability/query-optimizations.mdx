@@ -1,0 +1,227 @@
+---
+title: "Efficient Querying and Performance Patterns"
+description: "Identify performance best practices such as query batching, prepared statements, and the use of bulk operations for inserts, updates, and deletes. Learn how go-pg leverages PostgreSQL features to achieve maximum throughput."
+---
+
+# Efficient Querying and Performance Patterns
+
+Optimizing database interactions is critical for building high-performance applications with go-pg. This guide focuses on practical patterns and best practices to maximize throughput, minimize latency, and reduce resource consumption. Leveraging PostgreSQL's features alongside go-pg's ORM and query builder capabilities empowers you to write efficient, maintainable data access code.
+
+---
+
+## 1. Query Batching for Reduced Round-Trips
+
+### Why Batch Queries?
+Each interaction with the database has overhead due to network latency and query parsing. By batching multiple inserts, updates, or deletes into a single query, you drastically reduce round-trips, lowering latency and increasing overall throughput.
+
+### Using Bulk Operations in go-pg
+
+- **Bulk Inserts:** Instead of inserting records one by one, pass a slice of structs to `Model().Insert()`.
+- **Bulk Updates:** Update multiple records together by using `Model().Update()` on slices.
+- **Bulk Deletes:** Similarly, bulk delete operations can be performed on slices.
+
+### Example: Bulk Insert
+```go
+users := []*User{
+    {Name: "Alice"},
+    {Name: "Bob"},
+    {Name: "Charlie"},
+}
+
+// Insert all users in one batch
+_, err := db.Model(&users).Insert()
+if err != nil {
+    panic(err)
+}
+```
+
+Bulk operations minimize network chatter, optimize SQL parsing, and reduce transaction overhead within PostgreSQL.
+
+---
+
+## 2. Prepared Statements for Repeated Queries
+
+Prepared statements improve performance when executing the same SQL multiple times with different parameters:
+
+- Query plans are cached on the PostgreSQL server.
+- Reduces CPU and parsing overhead.
+- Improves security by separating query structure from parameters.
+
+### How to Use in go-pg
+
+```go
+stmt, err := db.Prepare(nil, "SELECT * FROM users WHERE id = ?")
+if err != nil {
+    panic(err)
+}
+defer stmt.Close()
+
+user := &User{Id: 1}
+err = stmt.QueryOne(user)
+if err != nil {
+    panic(err)
+}
+```
+
+Invoking `Prepare()` caches the SQL execution plan. Subsequent `Query()` or `Exec()` calls reuse the prepared plan, boosting speed.
+
+### Best Practices
+
+- Use prepared statements for high-volume, repeated queries.
+- Close statements when no longer needed to release resources.
+- Combine with connection pooling to retain prepared statements efficiently.
+
+---
+
+## 3. Efficient Query Building with ORM and Raw SQL
+
+### Using go-pg ORM Query Builder
+
+The ORM provides a fluent interface to build optimized queries:
+
+- Select only necessary columns with `.Column()` to reduce payload.
+- Filter with `.Where()`, `.WhereIn()`, and `.WhereGroup()` for efficient indexing.
+- Use `.Relation()` to eager-load related models, avoiding N+1 queries.
+- Apply `.Limit()`, `.Offset()`, and `.Order()` for pagination and sorting.
+
+### Example: Select Specific Columns and Relations
+```go
+var stories []Story
+err := db.Model(&stories).
+    Column("id", "title").
+    Relation("Author", func(q *Query) (*Query, error) {
+        return q.Column("id", "name"), nil
+    }).
+    Where("author_id = ?", authorID).
+    Limit(10).
+    Order("id DESC").
+    Select()
+if err != nil {
+    panic(err)
+}
+```
+
+This issues a compact SQL query selecting minimal columns and joins, lowering query time and memory usage.
+
+### Raw SQL When Needed
+For highly complex queries, use raw SQL with `Query()` or `Exec()` methods—go-pg supports parameterized raw queries, preserving security and performance.
+
+---
+
+## 4. Using Common Table Expressions (CTEs) and WITH Clauses
+
+CTEs help break complex queries into manageable parts and improve readability and optimization.
+
+In go-pg, wrap your query as a CTE using `.With()` or `.WrapWith()`:
+
+```go
+subQuery := db.Model(&Order{}).Where("status = ?", "pending")
+query := db.Model(&User{}).
+    With("pending_orders", subQuery).
+    Where("id IN (SELECT user_id FROM pending_orders)")
+
+var users []User
+err := query.Select(&users)
+```
+
+This approach leverages SQL optimization while keeping Go code clean and maintainable.
+
+---
+
+## 5. Count and Pagination Optimization
+
+### Count Estimate for Large Datasets
+Counting large tables can be expensive. go-pg offers `CountEstimate` to provide a fast approximate count using PostgreSQL's `EXPLAIN` plan.
+
+Example:
+```go
+count, err := db.Model(&User{}).Where("active = ?", true).CountEstimate(10000)
+if err != nil {
+    panic(err)
+}
+```
+
+This method returns an estimated number of matching rows based on query costs, greatly improving performance on big tables.
+
+### Pagination Best Practices
+- **Use Indexed Columns for Offset:** Avoid large offsets; paginate by indexed columns or keysets for speed.
+- **Combine with CountEstimate:** Show approximate totals in UI efficiently.
+
+Refer to the [Count Estimates and Efficient Pagination](https://pg.uptrace.dev/concepts/performance-scalability/count-estimation) guide for deep insights.
+
+---
+
+## 6. Leveraging PostgreSQL Features for Throughput
+
+### ON CONFLICT for Upserts
+PostgreSQL’s `INSERT ... ON CONFLICT` capability allows conditional insert/update logic in a single query reducing race conditions.
+
+In go-pg:
+```go
+_, err := db.Model(&user).
+    OnConflict("DO UPDATE SET name = EXCLUDED.name").
+    Insert()
+```
+
+### Common Table Expressions and Recursive Queries
+CTEs (`WITH` clauses) and recursive CTEs can enable powerful query patterns supported transparently by go-pg’s query builders.
+
+### COPY for Bulk Data Transfer
+For extremely large inserts or exports, use PostgreSQL's `COPY FROM` and `COPY TO` commands with go-pg's `CopyFrom` and `CopyTo` methods to bypass typical query parsing overhead.
+
+---
+
+## 7. Practical Tips and Common Pitfalls
+
+- **Avoid Selecting *:** Explicitly select needed columns to reduce network and memory overhead.
+- **Batch Multiple Small Writes:** Where possible, group data modification operations.
+- **Use Context for Cancellation:** Apply `context.Context` in queries to prevent leaked or long-running queries.
+- **Monitor Query Plans:** Use PostgreSQL EXPLAIN and go-pg monitoring tools to identify slow queries.
+- **Regularly Update Statistics:** Keep PostgreSQL statistics up-to-date for optimizer efficiency.
+
+---
+
+## 8. Troubleshooting Performance Issues
+
+### Slow Queries
+- Check if your queries fetch unnecessary columns or rows.
+- Analyze query plans and add missing indexes.
+
+### Connection Pool Saturation
+- Tune pool sizes and monitor pool health ([Connection Pooling Guide](https://pg.uptrace.dev/guides/performance-best-practices/connection-pooling)).
+
+### Race Conditions in Upsert
+- Use `OnConflict` with proper unique constraint usage to avoid conflicts.
+
+### Excessive Memory Usage
+- Ensure bulk queries are not too large; balance batch sizes.
+- Use streaming queries with `ForEach()` to process large results incrementally.
+
+---
+
+## 9. Summary Flow: From Query to Execution
+
+1. **Model Building:** Define your model or raw SQL query.
+2. **Query Construction:** Use fluent API for selecting fields, filtering, joining.
+3. **Batching:** Aggregate bulk operations where possible.
+4. **Prepared Statements:** Prepare heavily used queries.
+5. **Execution:** Run the query with context support.
+6. **Result Mapping:** Map returned data efficiently into structs.
+7. **Monitoring:** Use monitoring tools and logs to optimize.
+
+---
+
+For a visual overview of data flow from query building to execution, refer to the [System Components and Data Flow](https://pg.uptrace.dev/concepts/architecture-overview/system-components) documentation.
+
+---
+
+## Related Resources
+
+- [Bulk Operations Guide - Inserts, Updates, Deletes](https://pg.uptrace.dev/guides/performance-best-practices/optimizing-queries-batch)
+- [Connection Pooling and Reliability](https://pg.uptrace.dev/guides/performance-best-practices/connection-pooling)
+- [Count Estimates and Efficient Pagination](https://pg.uptrace.dev/guides/performance-best-practices/count-estimate-pagination)
+- [OnConflict Upsert Usage](https://pg.uptrace.dev/api-reference/core-db-interfaces/query-interface-examples#insert-on-conflict-do-update)
+
+---
+
+Harness these proven patterns and PostgreSQL capabilities with go-pg to deliver efficient, scalable, and robust backend data access for your Go applications.
